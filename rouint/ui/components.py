@@ -123,10 +123,12 @@ def display_header(subtitle: str | None = None) -> None:
     console.print()
 
     if subtitle:
+        console.print("[dim cyan]│[/dim cyan]")
         console.print(
-            f"[bold cyan]► {subtitle}[/bold cyan] "
-            f"[dim](Press Esc to exit anytime)[/dim]\n"
+            f"[bold cyan]◆  {subtitle}[/bold cyan]  "
+            f"[dim](Press Esc to exit anytime)[/dim]"
         )
+        console.print("[dim cyan]│[/dim cyan]\n")
 
 
 def display_banner() -> None:

@@ -24,6 +24,22 @@ import questionary
 console = Console()
 
 # ---------------------------------------------------------------------------
+# Questionary custom style & pointer
+# ---------------------------------------------------------------------------
+
+_SELECT_STYLE = questionary.Style([
+    ("qmark",       "fg:#00bfff bold"),   # the ? prefix
+    ("question",    "bold"),
+    ("answer",      "fg:#00bfff bold"),
+    ("pointer",     "fg:#00bfff bold"),   # the ◆ pointer
+    ("highlighted", "fg:#00bfff bold"),   # hovered item
+    ("selected",    "fg:#00bfff"),
+    ("instruction", "fg:#666666"),
+])
+
+_POINTER = "❯"
+
+# ---------------------------------------------------------------------------
 # Token management helpers
 # ---------------------------------------------------------------------------
 
@@ -105,7 +121,7 @@ def select_endpoint():
 
     choices = [f"{ep['name']} [{ep['method']}]" for ep in endpoints]
     choices.append("— Exit —")
-    selected_label = questionary.select("Select an endpoint (or press Esc to exit):", choices=choices).ask()
+    selected_label = questionary.select("Select an endpoint (or press Esc to exit):", choices=choices, style=_SELECT_STYLE, pointer=_POINTER, instruction="").ask()
 
     if not selected_label or selected_label == "— Exit —":
         return None
@@ -152,6 +168,9 @@ def select_environment(default_ref=None):
         "Select a base URL / environment:",
         choices=choices,
         default=default_label,
+        style=_SELECT_STYLE,
+        pointer=_POINTER,
+        instruction="",
     ).ask()
 
     if not selected:
@@ -185,7 +204,9 @@ def handle_endpoint_creation(existing_ep=None):
     method = questionary.select(
         "Which method should this endpoint use?",
         choices=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
-        default=defaults.get("method")
+        default=defaults.get("method"),
+        style=_SELECT_STYLE,
+        pointer=_POINTER,
     ).ask()
     if not method:
         console.print("[red]Endpoint creation cancelled.[/red]")
@@ -266,7 +287,9 @@ def handle_endpoint_creation(existing_ep=None):
     auth_type = questionary.select(
         "Authentication type?",
         choices=["None", "Bearer Token", "Custom"],
-        default=defaults.get("auth", {}).get("type", "None").capitalize()
+        default=defaults.get("auth", {}).get("type", "None").capitalize(),
+        style=_SELECT_STYLE,
+        pointer=_POINTER,
     ).ask()
     auth = {"type": auth_type.lower() if auth_type else "none"}
 
@@ -369,14 +392,11 @@ def add_base_url():
             table.add_row("[dim]none[/dim]", "[dim]—[/dim]")
         console.print(table)
 
-        action = questionary.select(
-            "What would you like to do?",
-            choices=[
-                "Add a new base URL",
-                "Delete an environment",
-                "Back / Exit",
-            ]
-        ).ask()
+        action = questionary.select("What would you like to do?", choices=[
+            "Add a new base URL",
+            "Delete an environment",
+            "Back / Exit",
+        ], style=_SELECT_STYLE, pointer=_POINTER, instruction="").ask()
 
         if not action or action == "Back / Exit":
             break
@@ -412,7 +432,7 @@ def add_base_url():
                 continue
 
             choices = [f"{e['name']}  ({e['base_url']})" for e in envs]
-            selected = questionary.select("Select environment to delete:", choices=choices).ask()
+            selected = questionary.select("Select environment to delete:", choices=choices, style=_SELECT_STYLE, pointer=_POINTER, instruction="").ask()
             if not selected:
                 continue
 
@@ -462,10 +482,7 @@ def start_test(no_metrics):
             base_url = base_url.strip().rstrip("/")
         else:
             env_choices = [f"{e['name']}  →  {e['base_url']}" for e in envs]
-            selected_env_label = questionary.select(
-                "Select a base URL to test against:",
-                choices=env_choices
-            ).ask()
+            selected_env_label = questionary.select("Select a base URL to test against:", choices=env_choices, style=_SELECT_STYLE, pointer=_POINTER, instruction="").ask()
             if not selected_env_label:
                 return
             # Extract base_url from the chosen label
@@ -524,7 +541,17 @@ def start_test(no_metrics):
             request_lines.append(f"  {h_key}: {display_val}")
         request_body = selected_ep.get("body")
         request_lines.append("")
-        request_lines.append(f"Request Body: {request_body if request_body else 'None'}")
+        if request_body:
+            try:
+                parsed_body = json.loads(request_body)
+                pretty_body = json.dumps(parsed_body, indent=2)
+                request_lines.append("Request Body:")
+                for line in pretty_body.splitlines():
+                    request_lines.append(f"  {line}")
+            except (json.JSONDecodeError, TypeError):
+                request_lines.append(f"Request Body: {request_body}")
+        else:
+            request_lines.append("Request Body: None")
 
         console.print(Panel(
             "\n".join(request_lines),
@@ -563,7 +590,16 @@ def start_test(no_metrics):
         for h_key, h_val in response.headers.items():
             response_lines.append(f"  {h_key}: {h_val}")
         response_lines.append("")
-        response_lines.append(response.body)
+        if response.body:
+            try:
+                parsed_resp = json.loads(response.body)
+                pretty_resp = json.dumps(parsed_resp, indent=2)
+                for line in pretty_resp.splitlines():
+                    response_lines.append(f"  {line}")
+            except (json.JSONDecodeError, TypeError):
+                response_lines.append(response.body)
+        else:
+            response_lines.append("  (empty body)")
 
         console.print(Panel(
             "\n".join(response_lines),
@@ -617,7 +653,7 @@ def start_test(no_metrics):
                 console.print("[dim]Use 'rouint clear-token' to remove it.[/dim]")
 
         # ── Loop back to endpoint list automatically ─────────────────────
-        console.print("\n[bold]────────────────────────────────────────────[/bold]\n")
+        console.print()
 
 @cli.command(name="list-api")
 def list_api():
@@ -640,15 +676,12 @@ def list_api():
             break
 
         # Action Menu
-        action = questionary.select(
-            "What would you like to do with this endpoint?",
-            choices=[
-                "Edit Endpoint",
-                "View Configuration",
-                "Delete Endpoint",
-                "Back"
-            ]
-        ).ask()
+        action = questionary.select("What would you like to do with this endpoint?", choices=[
+            "Edit Endpoint",
+            "View Configuration",
+            "Delete Endpoint",
+            "Back"
+        ], style=_SELECT_STYLE, pointer=_POINTER, instruction="").ask()
 
         if action == "Edit Endpoint":
             handle_endpoint_creation(existing_ep=selected_ep)
