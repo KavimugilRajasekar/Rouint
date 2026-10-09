@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.class
+venv/
+.env
+
+# Rouint Data
+.rouint-data/
+
+# Test artifacts
+test_server.py
+run_tests.py
+verify_complete.py
+server.log
