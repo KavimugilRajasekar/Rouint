@@ -431,7 +431,8 @@ def add_base_url():
 
 
 @cli.command(name="start-test")
-def start_test():
+@click.option("--no-metrics", is_flag=True, default=False, help="Hide the metrics box from the output.")
+def start_test(no_metrics):
     """Select an API endpoint and a base URL, then run the test."""
     display_header("API Endpoint Test Runner")
     if not is_initialized():
@@ -574,30 +575,32 @@ def start_test():
         ))
 
         # ── METRICS box ──────────────────────────────────────────────────
-        time_ms = response.elapsed_time * 1000
-        size_b = response.response_size
-        if size_b < 1024:
-            size_display = f"{size_b} B"
-        else:
-            size_display = f"{size_b / 1024:.1f} KB"
+        if not no_metrics:
+            time_ms = response.elapsed_time * 1000
+            size_b = response.response_size
+            if size_b < 1024:
+                size_display = f"{size_b} B"
+            else:
+                size_display = f"{size_b / 1024:.1f} KB"
 
-        metrics_lines = [
-            f"HTTP Status:      {response.status_code}",
-            f"Response Time:    {time_ms:.0f} ms",
-            f"Response Size:    {size_display}",
-            f"Result:           HTTP request completed",
-        ]
+            metrics_lines = [
+                f"HTTP Status:      {response.status_code}",
+                f"Response Time:    {time_ms:.0f} ms",
+                f"Response Size:    {size_display}",
+                f"Result:           HTTP request completed",
+            ]
+
+            result_color = "green" if 200 <= response.status_code < 400 else "yellow"
+            console.print(Panel(
+                "\n".join(metrics_lines),
+                title=f"[bold {result_color}]METRICS[/bold {result_color}]",
+                title_align="left",
+                border_style=result_color,
+                expand=True,
+                width=box_w,
+            ))
 
         result_color = "green" if 200 <= response.status_code < 400 else "yellow"
-        console.print(Panel(
-            "\n".join(metrics_lines),
-            title=f"[bold {result_color}]METRICS[/bold {result_color}]",
-            title_align="left",
-            border_style=result_color,
-            expand=True,
-            width=box_w,
-        ))
-
         console.print(f"[{result_color}]✓ Response received successfully[/{result_color}]")
 
         # ── Token capture ────────────────────────────────────────────────
