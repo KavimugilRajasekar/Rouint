@@ -96,8 +96,37 @@ def init_workspace():
             json.dump({}, f, indent=2)
 
         # Create .gitignore for data dir
+        gitignore_content = """\
+# =============================================================
+# Rouint workspace — .gitignore
+# =============================================================
+# This file controls what gets committed when .rouint-data/
+# is tracked by git.
+#
+# SAFE to commit   : endpoints/   registry.json   config.json
+# NOT safe to commit: environments/  .temp_token   bodies/
+# =============================================================
+
+# --- Sensitive: never commit ---
+
+# Environment files contain real base URLs (local, staging, prod)
+environments/
+
+# Temp Bearer token saved after a successful auth response
+.temp_token
+
+# Request bodies may contain credentials or PII
+bodies/
+
+# Any explicitly marked secret files
+*.secret.json
+
+# --- Editor / OS noise ---
+.DS_Store
+Thumbs.db
+"""
         with open(data_path / ".gitignore", "w") as f:
-            f.write("# Ignore local secrets\n*.secret.json\n")
+            f.write(gitignore_content)
 
         return True, "Workspace initialized successfully."
     except Exception as e:

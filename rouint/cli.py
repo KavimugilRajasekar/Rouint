@@ -130,188 +130,233 @@ def select_endpoint():
     return next(ep for ep in endpoints if ep['name'] == selected_label.split("  [")[0].strip())
 
 def handle_endpoint_creation(existing_ep=None):
-    """Shared logic for creating and editing endpoints."""
-    # Default values if editing
+    """Shared logic for creating and editing endpoints.
+    Each step supports Esc to go back to the previous step.
+    """
     defaults = existing_ep or {}
-
     console.print("[dim]Base URL is selected at test time — you can test this endpoint against any saved URL.[/dim]\n")
 
-    # 1. HTTP Method
-    method = questionary.select(
-        "Which method should this endpoint use?",
-        choices=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
-        default=defaults.get("method"),
-        style=_SELECT_STYLE,
-        pointer=_POINTER,
-    ).ask()
-    if not method:
-        console.print("[red]Endpoint creation cancelled.[/red]")
-        return None
-
-    # 2. Path
-    while True:
-        path = questionary.text(
-            "Enter endpoint path (e.g., /api/v1/users/{user_id}):",
-            default=defaults.get("path", "")
-        ).ask()
-        if not path or not path.strip():
-            console.print("[red]✗ Path is required.[/red]")
-            continue
-        path = path.strip()
-        if not path.startswith("/"):
-            path = "/" + path
-        valid, msg = validate_path(path)
-        if not valid:
-            console.print(f"[red]✗ {msg}[/red]")
-            continue
-        break
-
-    # 3. Headers
-    # When editing, use saved headers. When creating, derive sensible defaults from method.
-    if defaults.get("headers"):
-        headers = dict(defaults["headers"])
-        header_source = "saved"
-    else:
-        headers = {"Accept": "application/json"}
-        if method in ["POST", "PUT", "PATCH"]:
-            headers["Content-Type"] = "application/json"
-        header_source = "default"
-
-    # Show current headers
-    if headers:
-        label = "Saved headers:" if header_source == "saved" else f"Default headers for {method}:"
-        console.print(f"\n[bold]{label}[/bold]")
-        for hk, hv in headers.items():
-            console.print(f"  [cyan]{hk}[/cyan]: {hv}")
-        console.print()
-
-    add_header = questionary.confirm(
-        "Add or edit headers?",
-        default=False
-    ).ask()
-    if add_header:
-        console.print("[dim]Enter header name only (e.g. Authorization), then its value separately.[/dim]")
-        console.print("[dim]Press Enter with an empty name to finish.[/dim]\n")
-        while True:
-            h_key = questionary.text("Header name (e.g. Authorization):").ask()
-            if not h_key or not h_key.strip():
-                break
-            # Guard: user typed "Key: Value" in one shot
-            if ":" in h_key:
-                console.print("[yellow]⚠  Enter ONLY the header name here, not 'Name: Value'.[/yellow]")
-                console.print("[yellow]   Example: Authorization  (then press Enter, then give the value)[/yellow]\n")
-                continue
-            h_key = h_key.strip()
-            h_val = questionary.text(f"Value for '{h_key}':").ask()
-            if h_val is not None:
-                headers[h_key] = h_val.strip()
-
-    # 4. Auth
-    auth_type = questionary.select(
-        "Authentication type?",
-        choices=["None", "Bearer Token", "Custom"],
-        default=defaults.get("auth", {}).get("type", "None").capitalize(),
-        style=_SELECT_STYLE,
-        pointer=_POINTER,
-    ).ask()
-    auth = {"type": auth_type.lower() if auth_type else "none"}
-
-    if auth_type == "Custom":
-        saved_header = defaults.get("auth", {}).get("header", "Authorization")
-        saved_value = defaults.get("auth", {}).get("value", "")
-        custom_header = questionary.text("Custom auth header name:", default=saved_header).ask()
-        if custom_header and custom_header.strip():
-            custom_value = questionary.text(f"Value for '{custom_header.strip()}':", default=saved_value).ask()
-            if custom_value:
-                auth["header"] = custom_header.strip()
-                auth["value"] = custom_value.strip()
-                headers[custom_header.strip()] = custom_value.strip()
-
-    # 5. Body — for methods that support a request body
+    # Step state
+    method = defaults.get("method")
+    path = defaults.get("path", "")
+    headers = dict(defaults.get("headers") or {})
+    auth = dict(defaults.get("auth") or {"type": "none"})
     body = defaults.get("body")
-    if method in ["POST", "PUT", "PATCH", "DELETE"]:
-        has_body = questionary.confirm(
-            "Does this request have a body?",
-            default=True if body else False
-        ).ask()
-        if has_body:
-            console.print('[dim]Enter raw JSON body.[/dim]')
-            while True:
-                body = questionary.text(
-                    "JSON body:",
-                    default=body or ""
-                ).ask()
-                if not body or not body.strip():
-                    console.print("[red]✗ Body cannot be empty. Enter a valid JSON string or answer No above to skip.[/red]")
-                    continue
-                body = body.strip()
-                try:
-                    json.loads(body)
-                    break  # valid JSON — proceed
-                except ValueError:
-                    console.print("[red]✗ Invalid JSON — check your syntax and try again.[/red]")
-                    console.print("[dim]  Example: {\"username\": \"alice\", \"password\": \"secret\"}[/dim]")
-        else:
-            body = None
+    files = list(defaults.get("files") or [])
+    name = defaults.get("name", "")
 
-    # 6. File attachments — only for methods that support a body
-    existing_files = defaults.get("files") or []
-    files = list(existing_files)
+    STEPS = ["method", "path", "headers", "auth", "body", "files", "name"]
+    step = 0
 
-    if method in ["POST", "PUT", "PATCH", "DELETE"]:
-        if files:
-            console.print("\n[bold]Saved file attachments:[/bold]")
-            for i, f in enumerate(files, 1):
-                console.print(f"  [{i}] [cyan]{f.get('field', 'file')}[/cyan] → {f.get('path', '')}")
+    while step < len(STEPS):
+        current = STEPS[step]
+
+        # ── Step 1: Method ───────────────────────────────────────────────
+        if current == "method":
+            result = questionary.select(
+                "HTTP method:",
+                choices=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+                default=method,
+                style=_SELECT_STYLE,
+                pointer=_POINTER,
+                instruction="",
+            ).ask()
+            if result is None:
+                console.print("[yellow]Cancelled.[/yellow]")
+                return None
+            method = result
+            # Reset body/files/headers defaults if method changes
+            if not defaults.get("headers"):
+                headers = {"Accept": "application/json"}
+                if method in ["POST", "PUT", "PATCH"]:
+                    headers["Content-Type"] = "application/json"
+            step += 1
+
+        # ── Step 2: Path ─────────────────────────────────────────────────
+        elif current == "path":
+            result = questionary.text(
+                "Endpoint path (e.g., /api/v1/users/{id}):",
+                default=path,
+            ).ask()
+            if result is None:
+                step -= 1
+                continue
+            if not result.strip():
+                console.print("[red]✗ Path is required.[/red]")
+                continue
+            result = result.strip()
+            if not result.startswith("/"):
+                result = "/" + result
+            valid, msg = validate_path(result)
+            if not valid:
+                console.print(f"[red]✗ {msg}[/red]")
+                continue
+            path = result
+            step += 1
+
+        # ── Step 3: Headers ──────────────────────────────────────────────
+        elif current == "headers":
+            label = "Saved headers:" if defaults.get("headers") else f"Default headers for {method}:"
+            console.print(f"\n[bold]{label}[/bold]")
+            for hk, hv in headers.items():
+                console.print(f"  [cyan]{hk}[/cyan]: {hv}")
             console.print()
 
-        add_files = questionary.confirm("Attach files to this request?", default=bool(files)).ask()
-        if add_files:
-            console.print("[dim]Enter the form field name and absolute file path for each file.[/dim]")
-            console.print("[dim]Press Enter with an empty path to finish.[/dim]\n")
-            files = []
-            while True:
-                file_path = questionary.text("File path (absolute, e.g. /home/user/photo.jpg):").ask()
-                if not file_path or not file_path.strip():
-                    break
-                file_path = file_path.strip()
-                if not _Path(file_path).exists():
-                    console.print(f"[red]✗ File not found: {file_path}[/red]")
-                    continue
-                if not _Path(file_path).is_file():
-                    console.print(f"[red]✗ Not a file: {file_path}[/red]")
-                    continue
-                field_name = questionary.text("Form field name for this file:", default="file").ask()
-                if not field_name or not field_name.strip():
-                    field_name = "file"
-                files.append({"field": field_name.strip(), "path": file_path})
-                console.print(f"[green]✓ Added: {field_name.strip()} → {file_path}[/green]")
-            # curl sets Content-Type to multipart/form-data automatically — remove it to avoid conflict
+            add_header = questionary.confirm("Add or edit headers?", default=False).ask()
+            if add_header is None:
+                step -= 1
+                continue
+            if add_header:
+                console.print("[dim]Enter header name, then value. Empty name to finish. Esc to go back.[/dim]\n")
+                while True:
+                    h_key = questionary.text("Header name:").ask()
+                    if h_key is None:
+                        break  # Esc — stop adding headers, stay on this step
+                    if not h_key.strip():
+                        break  # empty — done
+                    if ":" in h_key:
+                        console.print("[yellow]⚠  Enter ONLY the header name, not 'Name: Value'.[/yellow]\n")
+                        continue
+                    h_val = questionary.text(f"Value for '{h_key.strip()}':").ask()
+                    if h_val is None:
+                        break  # Esc — stop adding
+                    headers[h_key.strip()] = h_val.strip()
+            step += 1
+
+        # ── Step 4: Auth ─────────────────────────────────────────────────
+        elif current == "auth":
+            current_auth_type = auth.get("type", "none")
+            display_default = current_auth_type.title() if current_auth_type != "bearer token" else "Bearer Token"
+            result = questionary.select(
+                "Authentication type?",
+                choices=["None", "Bearer Token", "Custom"],
+                default=display_default,
+                style=_SELECT_STYLE,
+                pointer=_POINTER,
+                instruction="",
+            ).ask()
+            if result is None:
+                step -= 1
+                continue
+            auth = {"type": result.lower()}
+            if result == "Custom":
+                saved_header = auth.get("header", "Authorization")
+                saved_value = auth.get("value", "")
+                custom_header = questionary.text("Custom auth header name:", default=saved_header).ask()
+                if custom_header is None:
+                    continue  # Esc — re-show auth select
+                if custom_header.strip():
+                    custom_value = questionary.text(f"Value for '{custom_header.strip()}':", default=saved_value).ask()
+                    if custom_value is None:
+                        continue  # Esc — re-show auth select
+                    auth["header"] = custom_header.strip()
+                    auth["value"] = custom_value.strip()
+                    headers[custom_header.strip()] = custom_value.strip()
+            step += 1
+
+        # ── Step 5: Body ─────────────────────────────────────────────────
+        elif current == "body":
+            if method not in ["POST", "PUT", "PATCH", "DELETE"]:
+                body = None
+                step += 1
+                continue
+
+            has_body = questionary.confirm(
+                "Does this request have a body?",
+                default=bool(body),
+            ).ask()
+            if has_body is None:
+                step -= 1
+                continue
+            if has_body:
+                console.print("[dim]Enter raw JSON body.[/dim]")
+                while True:
+                    result = questionary.text("JSON body:", default=body or "").ask()
+                    if result is None:
+                        break  # Esc — re-show has_body confirm
+                    if not result.strip():
+                        console.print("[red]✗ Body cannot be empty.[/red]")
+                        continue
+                    result = result.strip()
+                    try:
+                        json.loads(result)
+                        body = result
+                        break
+                    except ValueError:
+                        console.print("[red]✗ Invalid JSON — check syntax and try again.[/red]")
+                        console.print('[dim]  Example: {"key": "value"}[/dim]')
+                if result is None:
+                    continue  # Esc on body input — re-show has_body
+            else:
+                body = None
+            step += 1
+
+        # ── Step 6: Files ────────────────────────────────────────────────
+        elif current == "files":
+            if method not in ["POST", "PUT", "PATCH", "DELETE"]:
+                files = []
+                step += 1
+                continue
+
             if files:
-                headers.pop("Content-Type", None)
-                console.print("[dim]Content-Type removed — curl will set multipart/form-data automatically.[/dim]")
-        else:
-            files = []
-    else:
-        files = []
+                console.print("\n[bold]Saved file attachments:[/bold]")
+                for i, f in enumerate(files, 1):
+                    console.print(f"  [{i}] [cyan]{f.get('field', 'file')}[/cyan] → {f.get('path', '')}")
+                console.print()
 
-    # 7. Name — required, re-prompt if empty
-    name = questionary.text("Give this endpoint a name:", default=defaults.get("name", "")).ask()
-    if not name or not name.strip():
-        console.print("[red]Name is required. Please enter a name.[/red]")
-        name = questionary.text("Give this endpoint a name:").ask()
-        while not name or not name.strip():
-            console.print("[red]Name is required. Please enter a name.[/red]")
-            name = questionary.text("Give this endpoint a name:").ask()
+            add_files = questionary.confirm("Attach files to this request?", default=bool(files)).ask()
+            if add_files is None:
+                step -= 1
+                continue
+            if add_files:
+                console.print("[dim]File path + field name per file. Empty path to finish. Esc to go back.[/dim]\n")
+                new_files = []
+                while True:
+                    file_path = questionary.text("File path:").ask()
+                    if file_path is None:
+                        break  # Esc — stop adding files
+                    if not file_path.strip():
+                        break  # empty — done
+                    file_path = file_path.strip()
+                    if not _Path(file_path).exists():
+                        console.print(f"[red]✗ File not found: {file_path}[/red]")
+                        continue
+                    if not _Path(file_path).is_file():
+                        console.print(f"[red]✗ Not a file: {file_path}[/red]")
+                        continue
+                    field_name = questionary.text("Form field name:", default="file").ask()
+                    if field_name is None:
+                        break
+                    field_name = field_name.strip() or "file"
+                    new_files.append({"field": field_name, "path": file_path})
+                    console.print(f"[green]✓ {field_name} → {file_path}[/green]")
+                files = new_files
+                if files:
+                    headers.pop("Content-Type", None)
+                    console.print("[dim]Content-Type removed — curl sets multipart/form-data automatically.[/dim]")
+            else:
+                files = []
+            step += 1
 
-    # Save — base_url_ref is None; base URL is chosen at test time
+        # ── Step 7: Name ─────────────────────────────────────────────────
+        elif current == "name":
+            result = questionary.text("Give this endpoint a name:", default=name).ask()
+            if result is None:
+                step -= 1
+                continue
+            if not result.strip():
+                console.print("[red]✗ Name is required.[/red]")
+                continue
+            name = result.strip()
+            step += 1
+
+    # Save
     manager = EndpointManager()
-    slug = None
-    if existing_ep:
-        slug = name.lower().replace(" ", "-").replace("/", "-")
-
+    slug = existing_ep['id'].replace("ep_", "") if existing_ep else None
     endpoint_id = manager.save_endpoint(name, method, path, None, headers, auth, body, slug=slug, files=files)
     return endpoint_id
+
+
 
 @click.group(invoke_without_command=True)
 @click.pass_context
