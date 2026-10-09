@@ -240,15 +240,20 @@ def handle_endpoint_creation(existing_ep=None):
         valid, msg = validate_path(path)
 
     # 3. Headers
-    # Smart defaults: always start with Accept; add Content-Type for body methods
-    default_headers = {"Accept": "application/json"}
-    if method in ["POST", "PUT", "PATCH"]:
-        default_headers["Content-Type"] = "application/json"
-    headers = defaults.get("headers") or default_headers
+    # When editing, use saved headers. When creating, derive sensible defaults from method.
+    if defaults.get("headers"):
+        headers = dict(defaults["headers"])
+        header_source = "saved"
+    else:
+        headers = {"Accept": "application/json"}
+        if method in ["POST", "PUT", "PATCH"]:
+            headers["Content-Type"] = "application/json"
+        header_source = "default"
 
     # Show current headers
     if headers:
-        console.print("\n[bold]Current headers:[/bold]")
+        label = "Saved headers:" if header_source == "saved" else f"Default headers for {method}:"
+        console.print(f"\n[bold]{label}[/bold]")
         for hk, hv in headers.items():
             console.print(f"  [cyan]{hk}[/cyan]: {hv}")
         console.print()
@@ -275,14 +280,6 @@ def handle_endpoint_creation(existing_ep=None):
                 headers[h_key] = h_val.strip()
 
     # Show final headers
-    console.print("\n[bold]Headers to be saved:[/bold]")
-    for hk, hv in headers.items():
-        if hk.lower() in ("authorization", "auth"):
-            console.print(f"  [cyan]{hk}[/cyan]: [REDACTED]")
-        else:
-            console.print(f"  [cyan]{hk}[/cyan]: {hv}")
-    console.print()
-
     # 4. Auth
     auth_type = questionary.select(
         "Authentication type?",
@@ -301,7 +298,7 @@ def handle_endpoint_creation(existing_ep=None):
             default=True if body else False
         ).ask()
         if has_body:
-            console.print('[dim]Enter raw JSON body. Example: {"username": "alice", "password": "secret"}[/dim]')
+            console.print('[dim]Enter raw JSON body.[/dim]')
             body = questionary.text(
                 "JSON body:",
                 default=body or ""
@@ -310,6 +307,7 @@ def handle_endpoint_creation(existing_ep=None):
             while not body or not body.strip():
                 console.print("[red]Body cannot be empty. Enter a JSON string or press N above to skip.[/red]")
                 body = questionary.text("JSON body:").ask()
+            body = body.strip()
             # Warn if invalid JSON (don't block, just notify)
             try:
                 import json as _json
@@ -378,64 +376,68 @@ def add_base_url():
         console.print("[red]Error: Workspace not initialized. Run 'rouint init' first.[/red]")
         return
 
-    while True:
+    action = questionary.select(
+        "What would you like to do?",
+        choices=["Add a new base URL", "Delete an environment"],
+        style=_SELECT_STYLE,
+        pointer=_POINTER,
+        instruction="",
+    ).ask()
+
+    if not action:
+        return
+
+    if action == "Add a new base URL":
+        console.print("\n[dim]Examples: http://127.0.0.1:8080  |  https://api.myapp.com  |  https://staging.myapp.com[/dim]\n")
+
+        url = questionary.text("Base URL:").ask()
+        if not url or not url.strip():
+            console.print("[yellow]No URL entered. Cancelled.[/yellow]")
+            return
+        url = url.strip().rstrip("/")
+
+        suggested = url.replace("https://", "").replace("http://", "").split("/")[0]
+        suggested = suggested.replace(".", "-").replace(":", "-")
+        env_name = questionary.text(
+            "Label (e.g. local, staging, production):",
+            default=suggested
+        ).ask()
+        if not env_name or not env_name.strip():
+            console.print("[yellow]Name is required. Cancelled.[/yellow]")
+            return
+        env_name = env_name.strip().lower().replace(" ", "-")
+
+        save_environment(env_name, url)
+        console.print(f"\n[green]✓ '[bold]{env_name}[/bold]' → {url} saved.[/green]")
+
+    elif action == "Delete an environment":
         envs = list_environments()
+        if not envs:
+            console.print("[yellow]No environments configured.[/yellow]")
+            return
 
-        action = questionary.select("What would you like to do?", choices=[
-            "Add a new base URL",
-            "Delete an environment",
-            "Back / Exit",
-        ], style=_SELECT_STYLE, pointer=_POINTER, instruction="").ask()
+        choices = [f"{e['name']}  ({e['base_url']})" for e in envs]
+        selected = questionary.select(
+            "Select environment to delete:",
+            choices=choices,
+            style=_SELECT_STYLE,
+            pointer=_POINTER,
+            instruction="",
+        ).ask()
+        if not selected:
+            return
 
-        if not action or action == "Back / Exit":
-            break
-
-        elif action == "Add a new base URL":
-            console.print("\n[bold]Add a new base URL[/bold]")
-            console.print("[dim]Examples: http://127.0.0.1:8080  |  https://api.myapp.com  |  https://staging.myapp.com[/dim]\n")
-
-            url = questionary.text("Base URL:").ask()
-            if not url or not url.strip():
-                console.print("[yellow]No URL entered. Cancelled.[/yellow]")
-                continue
-            url = url.strip().rstrip("/")  # strip trailing slash
-
-            # Let user name the environment
-            suggested = url.replace("https://", "").replace("http://", "").split("/")[0]
-            suggested = suggested.replace(".", "-").replace(":", "-")
-            env_name = questionary.text(
-                "Give this environment a label (e.g. local, staging, production):",
-                default=suggested
-            ).ask()
-            if not env_name or not env_name.strip():
-                console.print("[yellow]Name is required. Cancelled.[/yellow]")
-                continue
-            env_name = env_name.strip().lower().replace(" ", "-")
-
-            save_environment(env_name, url)
-            console.print(f"\n[green]✓ Environment '[bold]{env_name}[/bold]' → {url} saved![/green]\n")
-
-        elif action == "Delete an environment":
-            if not envs:
-                console.print("[yellow]No environments to delete.[/yellow]")
-                continue
-
-            choices = [f"{e['name']}  ({e['base_url']})" for e in envs]
-            selected = questionary.select("Select environment to delete:", choices=choices, style=_SELECT_STYLE, pointer=_POINTER, instruction="").ask()
-            if not selected:
-                continue
-
-            env_name_to_delete = selected.split("  (")[0].strip()
-            confirm = questionary.confirm(
-                f"Delete environment '{env_name_to_delete}'?", default=False
-            ).ask()
-            if confirm:
-                env_file = (get_env_path() / f"{env_name_to_delete}.json")
-                if env_file.exists():
-                    env_file.unlink()
-                    console.print(f"[red]✓ Environment '{env_name_to_delete}' deleted.[/red]")
-                else:
-                    console.print("[yellow]Environment file not found.[/yellow]")
+        env_name_to_delete = selected.split("  (")[0].strip()
+        confirm = questionary.confirm(f"Delete '{env_name_to_delete}'?", default=True).ask()
+        if confirm:
+            env_file = get_env_path() / f"{env_name_to_delete}.json"
+            if env_file.exists():
+                env_file.unlink()
+                console.print(f"[green]✓ '{env_name_to_delete}' deleted.[/green]")
+            else:
+                console.print("[yellow]Environment file not found.[/yellow]")
+        else:
+            console.print("[dim]Cancelled.[/dim]")
 
 
 
@@ -518,7 +520,6 @@ def start_test(no_metrics):
                     effective_headers["Authorization"] = f"Bearer {token}"
 
         # ── REQUEST box ──────────────────────────────────────────────────
-        box_w = box_width()
 
         request_lines = []
         request_lines.append(f"[bold]> {selected_ep['method']} {resolved_path} HTTP/1.1[/bold]")
@@ -543,13 +544,12 @@ def start_test(no_metrics):
             request_lines.append("Request Body: None")
 
         console.print(Panel(
-            "\n".join(request_lines),
-            title="[bold blue]REQUEST[/bold blue]",
-            title_align="left",
-            border_style="blue",
-            expand=True,
-            width=box_w,
-        ))
+                    "\n".join(request_lines),
+                    title="[bold blue]REQUEST[/bold blue]",
+                    title_align="left",
+                    border_style="blue",
+                    expand=True,
+                ))
 
         # Execute
         console.print(f"\n[dim]Executing: {selected_ep['method']} {final_url}[/dim]\n")
@@ -563,13 +563,12 @@ def start_test(no_metrics):
         # ── RESPONSE box ─────────────────────────────────────────────────
         if response.error:
             console.print(Panel(
-                f"[red]{response.error}[/red]",
-                title="[bold red]RESPONSE[/bold red]",
-                title_align="left",
-                border_style="red",
-                expand=True,
-                width=box_w,
-            ))
+                        f"[red]{response.error}[/red]",
+                        title="[bold red]RESPONSE[/bold red]",
+                        title_align="left",
+                        border_style="red",
+                        expand=True,
+                    ))
             # Loop back to endpoint list
             console.print("\n")
             continue
@@ -591,13 +590,12 @@ def start_test(no_metrics):
             response_lines.append("  (empty body)")
 
         console.print(Panel(
-            "\n".join(response_lines),
-            title="[bold cyan]RESPONSE[/bold cyan]",
-            title_align="left",
-            border_style="cyan",
-            expand=True,
-            width=box_w,
-        ))
+                    "\n".join(response_lines),
+                    title="[bold cyan]RESPONSE[/bold cyan]",
+                    title_align="left",
+                    border_style="cyan",
+                    expand=True,
+                ))
 
         # ── METRICS box ──────────────────────────────────────────────────
         if not no_metrics:
@@ -617,13 +615,12 @@ def start_test(no_metrics):
 
             result_color = "green" if 200 <= response.status_code < 400 else "yellow"
             console.print(Panel(
-                "\n".join(metrics_lines),
-                title=f"[bold {result_color}]METRICS[/bold {result_color}]",
-                title_align="left",
-                border_style=result_color,
-                expand=True,
-                width=box_w,
-            ))
+                        "\n".join(metrics_lines),
+                        title=f"[bold {result_color}]METRICS[/bold {result_color}]",
+                        title_align="left",
+                        border_style=result_color,
+                        expand=True,
+                    ))
 
         result_color = "green" if 200 <= response.status_code < 400 else "yellow"
         console.print(f"[{result_color}]✓ Response received successfully[/{result_color}]")

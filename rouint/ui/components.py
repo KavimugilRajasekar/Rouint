@@ -61,20 +61,11 @@ _COMMANDS: list[tuple[str, str]] = [
 
 def box_width(console: Console | None = None) -> int:
     """
-    Computes a shared width for all Panels: 60 % of terminal width,
-    clamped to a minimum of 40 and maximum of 100 columns.
-
-    Parameters
-    ----------
-    console:
-        A Rich :class:`~rich.console.Console` instance used to determine
-        the current terminal width.  When *None*, a temporary Console is
-        created (width falls back to 80 when detection fails).
+    Returns the current terminal width for full-width panels.
+    Falls back to 80 if terminal width cannot be detected.
     """
     c = console or Console()
-    term_width = c.width or 80
-    width = int(term_width * 0.6)
-    return max(40, min(width, 100))
+    return c.width or 80
 
 
 def _truncate_cwd(cwd: Path | str, max_len: int = 42) -> str:
