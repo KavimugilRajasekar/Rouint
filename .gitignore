@@ -13,3 +13,9 @@ test_server.py
 run_tests.py
 verify_complete.py
 server.log
+
+# Python Build Artifacts
+*.egg
+*.egg-info/
+*.egg.txt
+build/
