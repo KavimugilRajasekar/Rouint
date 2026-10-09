@@ -95,13 +95,6 @@ def init_workspace():
         with open(data_path / REGISTRY_FILE, "w") as f:
             json.dump({}, f, indent=2)
 
-        # Default local environment
-        local_env = {
-            "base_url": "http://localhost:8000"
-        }
-        with open(data_path / ENV_DIR / "local.json", "w") as f:
-            json.dump(local_env, f, indent=2)
-
         # Create .gitignore for data dir
         with open(data_path / ".gitignore", "w") as f:
             f.write("# Ignore local secrets\n*.secret.json\n")

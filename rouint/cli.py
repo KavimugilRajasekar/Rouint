@@ -17,7 +17,7 @@ from rouint.utils.config import (
 )
 from rouint.core.manager import EndpointManager
 from rouint.core.parser import extract_placeholders, resolve_placeholders, validate_path
-from rouint.core.executor import execute_request
+from rouint.core.executor import execute_request, validate_url
 from rouint.ui import display_banner, display_header, box_width
 import questionary
 
@@ -129,71 +129,6 @@ def select_endpoint():
 
     return next(ep for ep in endpoints if ep['name'] == selected_label.split("  [")[0].strip())
 
-def select_environment(default_ref=None):
-    """
-    Prompts the user to select an environment/base URL or type a custom one.
-    Returns the environment name (e.g. "local").
-    Falls back to 'local' if no environments are configured.
-    """
-    envs = list_environments()
-
-    if not envs:
-        # No environments configured — ask for a custom URL
-        custom_url = questionary.text("Enter base URL (e.g., http://localhost:8000):").ask()
-        if not custom_url or not custom_url.strip():
-            return "local"
-        custom_url = custom_url.strip()
-        env_name = "custom"
-        save_environment(env_name, custom_url)
-        return env_name
-
-    # Build choice labels showing the URL for clarity
-    choices = []
-    for env in envs:
-        label = f"{env['name']} ({env['base_url']})"
-        choices.append(label)
-    # Add the "custom URL" option
-    choices.append("— Add a new base URL —")
-
-    # Determine default selection
-    default_label = None
-    if default_ref:
-        for env in envs:
-            if env["name"] == default_ref:
-                default_label = f"{env['name']} ({env['base_url']})"
-                break
-    if not default_label:
-        default_label = choices[0]
-
-    selected = questionary.select(
-        "Select a base URL / environment:",
-        choices=choices,
-        default=default_label,
-        style=_SELECT_STYLE,
-        pointer=_POINTER,
-        instruction="",
-    ).ask()
-
-    if not selected:
-        return default_ref or "local"
-
-    # Handle custom URL option
-    if selected == "— Add a new base URL —":
-        custom_url = questionary.text("Enter base URL (e.g., https://api.example.com):").ask()
-        if not custom_url or not custom_url.strip():
-            console.print("[yellow]No URL entered. Using default 'local'.[/yellow]")
-            return default_ref or "local"
-        custom_url = custom_url.strip()
-        # Derive a name from the URL (e.g., "https://api.example.com" -> "api-example-com")
-        env_name = custom_url.replace("https://", "").replace("http://", "")
-        env_name = env_name.split("/")[0].replace(".", "-").replace(":", "-")
-        save_environment(env_name, custom_url)
-        console.print(f"[green]✓ Environment '{env_name}' saved.[/green]")
-        return env_name
-
-    # Extract the environment name from the label (before the parenthesis)
-    return selected.split(" (")[0]
-
 def handle_endpoint_creation(existing_ep=None):
     """Shared logic for creating and editing endpoints."""
     # Default values if editing
@@ -214,31 +149,22 @@ def handle_endpoint_creation(existing_ep=None):
         return None
 
     # 2. Path
-    path = questionary.text(
-        "Enter endpoint path (e.g., /api/v1/users/{user_id})",
-        default=defaults.get("path", "")
-    ).ask()
-    if not path or not path.strip():
-        console.print("[red]Path is required. Please enter a valid path.[/red]")
-        path = questionary.text("Enter endpoint path").ask()
-        while not path or not path.strip():
-            console.print("[red]Path is required. Please enter a valid path.[/red]")
-            path = questionary.text("Enter endpoint path").ask()
-
-    path = path.strip()
-    if not path.startswith("/"):
-        path = "/" + path
-
-    valid, msg = validate_path(path)
-    while not valid:
-        console.print(f"[red]{msg}[/red]")
-        path = questionary.text("Enter endpoint path").ask()
+    while True:
+        path = questionary.text(
+            "Enter endpoint path (e.g., /api/v1/users/{user_id}):",
+            default=defaults.get("path", "")
+        ).ask()
         if not path or not path.strip():
+            console.print("[red]✗ Path is required.[/red]")
             continue
         path = path.strip()
         if not path.startswith("/"):
             path = "/" + path
         valid, msg = validate_path(path)
+        if not valid:
+            console.print(f"[red]✗ {msg}[/red]")
+            continue
+        break
 
     # 3. Headers
     # When editing, use saved headers. When creating, derive sensible defaults from method.
@@ -280,7 +206,6 @@ def handle_endpoint_creation(existing_ep=None):
             if h_val is not None:
                 headers[h_key] = h_val.strip()
 
-    # Show final headers
     # 4. Auth
     auth_type = questionary.select(
         "Authentication type?",
@@ -291,34 +216,86 @@ def handle_endpoint_creation(existing_ep=None):
     ).ask()
     auth = {"type": auth_type.lower() if auth_type else "none"}
 
-    # 5. Body
+    if auth_type == "Custom":
+        saved_header = defaults.get("auth", {}).get("header", "Authorization")
+        saved_value = defaults.get("auth", {}).get("value", "")
+        custom_header = questionary.text("Custom auth header name:", default=saved_header).ask()
+        if custom_header and custom_header.strip():
+            custom_value = questionary.text(f"Value for '{custom_header.strip()}':", default=saved_value).ask()
+            if custom_value:
+                auth["header"] = custom_header.strip()
+                auth["value"] = custom_value.strip()
+                headers[custom_header.strip()] = custom_value.strip()
+
+    # 5. Body — for methods that support a request body
     body = defaults.get("body")
-    if method in ["POST", "PUT", "PATCH"]:
+    if method in ["POST", "PUT", "PATCH", "DELETE"]:
         has_body = questionary.confirm(
             "Does this request have a body?",
             default=True if body else False
         ).ask()
         if has_body:
             console.print('[dim]Enter raw JSON body.[/dim]')
-            body = questionary.text(
-                "JSON body:",
-                default=body or ""
-            ).ask()
-            # Validate it's non-empty
-            while not body or not body.strip():
-                console.print("[red]Body cannot be empty. Enter a JSON string or press N above to skip.[/red]")
-                body = questionary.text("JSON body:").ask()
-            body = body.strip()
-            # Warn if invalid JSON (don't block, just notify)
-            try:
-                import json as _json
-                _json.loads(body)
-            except ValueError:
-                console.print("[yellow]⚠  Warning: body does not appear to be valid JSON. It will be sent as-is.[/yellow]")
+            while True:
+                body = questionary.text(
+                    "JSON body:",
+                    default=body or ""
+                ).ask()
+                if not body or not body.strip():
+                    console.print("[red]✗ Body cannot be empty. Enter a valid JSON string or answer No above to skip.[/red]")
+                    continue
+                body = body.strip()
+                try:
+                    json.loads(body)
+                    break  # valid JSON — proceed
+                except ValueError:
+                    console.print("[red]✗ Invalid JSON — check your syntax and try again.[/red]")
+                    console.print("[dim]  Example: {\"username\": \"alice\", \"password\": \"secret\"}[/dim]")
         else:
             body = None
 
-    # 6. Name — required, re-prompt if empty
+    # 6. File attachments — only for methods that support a body
+    existing_files = defaults.get("files") or []
+    files = list(existing_files)
+
+    if method in ["POST", "PUT", "PATCH", "DELETE"]:
+        if files:
+            console.print("\n[bold]Saved file attachments:[/bold]")
+            for i, f in enumerate(files, 1):
+                console.print(f"  [{i}] [cyan]{f.get('field', 'file')}[/cyan] → {f.get('path', '')}")
+            console.print()
+
+        add_files = questionary.confirm("Attach files to this request?", default=bool(files)).ask()
+        if add_files:
+            console.print("[dim]Enter the form field name and absolute file path for each file.[/dim]")
+            console.print("[dim]Press Enter with an empty path to finish.[/dim]\n")
+            files = []
+            while True:
+                file_path = questionary.text("File path (absolute, e.g. /home/user/photo.jpg):").ask()
+                if not file_path or not file_path.strip():
+                    break
+                file_path = file_path.strip()
+                if not _Path(file_path).exists():
+                    console.print(f"[red]✗ File not found: {file_path}[/red]")
+                    continue
+                if not _Path(file_path).is_file():
+                    console.print(f"[red]✗ Not a file: {file_path}[/red]")
+                    continue
+                field_name = questionary.text("Form field name for this file:", default="file").ask()
+                if not field_name or not field_name.strip():
+                    field_name = "file"
+                files.append({"field": field_name.strip(), "path": file_path})
+                console.print(f"[green]✓ Added: {field_name.strip()} → {file_path}[/green]")
+            # curl sets Content-Type to multipart/form-data automatically — remove it to avoid conflict
+            if files:
+                headers.pop("Content-Type", None)
+                console.print("[dim]Content-Type removed — curl will set multipart/form-data automatically.[/dim]")
+        else:
+            files = []
+    else:
+        files = []
+
+    # 7. Name — required, re-prompt if empty
     name = questionary.text("Give this endpoint a name:", default=defaults.get("name", "")).ask()
     if not name or not name.strip():
         console.print("[red]Name is required. Please enter a name.[/red]")
@@ -333,7 +310,7 @@ def handle_endpoint_creation(existing_ep=None):
     if existing_ep:
         slug = name.lower().replace(" ", "-").replace("/", "-")
 
-    endpoint_id = manager.save_endpoint(name, method, path, None, headers, auth, body, slug=slug)
+    endpoint_id = manager.save_endpoint(name, method, path, None, headers, auth, body, slug=slug, files=files)
     return endpoint_id
 
 @click.group(invoke_without_command=True)
@@ -378,7 +355,7 @@ def add_new_api():
       2. Path         — supports {placeholder} syntax (e.g. /users/{id})
       3. Headers      — pre-filled defaults based on method
       4. Auth         — None, Bearer Token, or Custom
-      5. Body         — JSON body for POST / PUT / PATCH
+      5. Body         — JSON body for POST / PUT / PATCH / DELETE (optional)
       6. Name         — a memorable label for the endpoint
 
     The endpoint is saved locally and can be tested against any
@@ -428,11 +405,20 @@ def add_base_url():
     if action == "Add a new base URL":
         console.print("\n[dim]Examples: http://127.0.0.1:8080  |  https://api.myapp.com  |  https://staging.myapp.com[/dim]\n")
 
-        url = questionary.text("Base URL:").ask()
-        if not url or not url.strip():
-            console.print("[yellow]No URL entered. Cancelled.[/yellow]")
-            return
-        url = url.strip().rstrip("/")
+        while True:
+            url = questionary.text("Base URL:").ask()
+            if not url or not url.strip():
+                console.print("[yellow]No URL entered. Cancelled.[/yellow]")
+                return
+            url = url.strip().rstrip("/")
+            if not (url.startswith("http://") or url.startswith("https://")):
+                console.print(f"[red]✗ Invalid URL — must start with http:// or https://[/red]")
+                continue
+            host = url.split("/")[2] if url.count("/") >= 2 else ""
+            if not host:
+                console.print(f"[red]✗ Invalid URL — missing host (e.g. 127.0.0.1:8080)[/red]")
+                continue
+            break
 
         suggested = url.replace("https://", "").replace("http://", "").split("/")[0]
         suggested = suggested.replace(".", "-").replace(":", "-")
@@ -513,14 +499,9 @@ def start_test(no_metrics):
             # ── Select Base URL ───────────────────────────────────────────────
             envs = list_environments()
             if not envs:
-                console.print("[yellow]No base URLs configured. Run 'rouint add-base-url' first.[/yellow]")
-                base_url = questionary.text(
-                    "Enter a base URL to use now (e.g. http://127.0.0.1:8080):"
-                ).ask()
-                if not base_url or not base_url.strip():
-                    console.print("[red]No base URL provided. Aborting.[/red]")
-                    return
-                base_url = base_url.strip().rstrip("/")
+                console.print("[yellow]No base URLs configured.[/yellow]")
+                console.print("[dim]Run [bold]rouint add-base-url[/bold] to add one first, then come back.[/dim]")
+                return
             else:
                 env_choices = [f"{e['name']}  →  {e['base_url']}" for e in envs]
                 selected_env_label = questionary.select("Select a base URL to test against:", choices=env_choices, style=_SELECT_STYLE, pointer=_POINTER, instruction="").ask()
@@ -559,6 +540,12 @@ def start_test(no_metrics):
                 resolved_path = "/" + resolved_path
             final_url = f"{clean_base_url}{resolved_path}"
 
+            # ── Validate final URL ────────────────────────────────────────────
+            url_ok, url_err = validate_url(final_url)
+            if not url_ok:
+                console.print(f"[red]✗ {url_err}[/red]")
+                continue
+
             # Build the effective headers, applying temp token if applicable
             effective_headers = dict(selected_ep.get("headers") or {})
             auth = selected_ep.get("auth") or {}
@@ -584,6 +571,30 @@ def start_test(no_metrics):
                         effective_headers["Authorization"] = f"Bearer {token}"
 
             # ── REQUEST box ──────────────────────────────────────────────────
+            # Collect files at test time — validate paths exist
+            saved_files = selected_ep.get("files") or []
+            effective_files = []
+            if saved_files:
+                console.print(f"\n[dim]This endpoint has {len(saved_files)} file attachment(s) defined.[/dim]")
+                for entry in saved_files:
+                    field = entry.get("field", "file")
+                    saved_path = entry.get("path", "").strip()
+                    file_path = questionary.text(
+                        f"File path for field '{field}':",
+                        default=saved_path,
+                    ).ask()
+                    if file_path is None:
+                        console.print("[yellow]Cancelled.[/yellow]")
+                        cancelled = True
+                        break
+                    file_path = file_path.strip()
+                    if not _Path(file_path).exists():
+                        console.print(f"[red]✗ File not found: {file_path} — skipping.[/red]")
+                        continue
+                    effective_files.append({"field": field, "path": file_path})
+                if cancelled:
+                    continue
+
             request_lines = []
             request_lines.append(f"[bold]> {selected_ep['method']} {resolved_path} HTTP/1.1[/bold]")
             for h_key, h_val in effective_headers.items():
@@ -594,6 +605,11 @@ def start_test(no_metrics):
                 request_lines.append(f"  {h_key}: {display_val}")
             request_body = selected_ep.get("body")
             request_lines.append("")
+            if effective_files:
+                request_lines.append("Attachments (multipart/form-data):")
+                for f in effective_files:
+                    request_lines.append(f"  {f['field']} → {f['path']}")
+                request_lines.append("")
             if request_body:
                 try:
                     parsed_body = json.loads(request_body)
@@ -604,7 +620,8 @@ def start_test(no_metrics):
                 except (json.JSONDecodeError, TypeError):
                     request_lines.append(f"Request Body: {request_body}")
             else:
-                request_lines.append("Request Body: None")
+                if not effective_files:
+                    request_lines.append("Request Body: None")
 
             console.print(Panel(
                 "\n".join(request_lines),
@@ -620,7 +637,8 @@ def start_test(no_metrics):
                 url=final_url,
                 method=selected_ep['method'],
                 headers=effective_headers,
-                body=selected_ep['body']
+                body=selected_ep['body'],
+                files=effective_files if effective_files else None,
             )
 
             # ── RESPONSE box ─────────────────────────────────────────────────
@@ -756,12 +774,11 @@ def list_api():
         elif action == "Delete Endpoint":
             confirm = questionary.confirm("Are you sure you want to delete this endpoint?").ask()
             if confirm:
-                # Derive slug for deletion
-                slug = selected_ep['name'].lower().replace(" ", "-").replace("/", "-")
+                slug = selected_ep['id'].replace("ep_", "")
                 manager.delete_endpoint(slug)
                 console.print("[red]✓ Endpoint deleted.[/red]")
         elif action == "Back":
-            continue
+            break
 
 @cli.command(name="clear-token")
 def clear_token():

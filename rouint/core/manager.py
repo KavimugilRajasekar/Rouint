@@ -11,7 +11,7 @@ class EndpointManager:
         self.endpoints_path = self.data_path / ENDPOINTS_DIR
         self.registry_path = self.data_path / REGISTRY_FILE
 
-    def save_endpoint(self, name: str, method: str, path: str, base_url_ref: Optional[str], headers: Dict[str, str], auth: Dict[str, Any], body: Optional[str], slug: Optional[str] = None) -> str:
+    def save_endpoint(self, name: str, method: str, path: str, base_url_ref: Optional[str], headers: Dict[str, str], auth: Dict[str, Any], body: Optional[str], slug: Optional[str] = None, files: Optional[List[Dict[str, str]]] = None) -> str:
         """Saves an endpoint configuration to a JSON file. Optionally updates an existing one via slug."""
         name = name.strip()
         if not name:
@@ -46,7 +46,8 @@ class EndpointManager:
             "base_url_ref": base_url_ref,
             "headers": headers,
             "auth": auth,
-            "body": body
+            "body": body,
+            "files": files or [],
         }
 
         with open(file_path, "w") as f:
