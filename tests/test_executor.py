@@ -6,14 +6,14 @@ from rouint.core.executor import execute_request, CurlResponse
 @patch("subprocess.run")
 def test_execute_request_success(mock_run):
     # Mock curl output:
-    # Headers + Body + \nHTTP_CODE\nTIME
+    # Headers + Body + \nHTTP_CODE\nTIME\nSIZE_DOWNLOAD
     mock_stdout = (
         "HTTP/1.1 200 OK\r\n"
         "Content-Type: application/json\r\n"
         "Content-Length: 18\r\n"
         "\r\n"
         '{"status": "ok"}'
-        "\n200\n0.123"
+        "\n200\n0.123\n18"
     )
     mock_run.return_value = MagicMock(stdout=mock_stdout, returncode=0)
 
@@ -23,6 +23,8 @@ def test_execute_request_success(mock_run):
     assert resp.elapsed_time == 0.123
     assert resp.body == '{"status": "ok"}'
     assert resp.headers["Content-Type"] == "application/json"
+    assert resp.status_line == "HTTP/1.1 200 OK"
+    assert resp.response_size == 18
     assert resp.error is None
 
 @patch("subprocess.run")
