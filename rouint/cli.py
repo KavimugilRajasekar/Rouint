@@ -122,7 +122,7 @@ def select_endpoint():
     max_name_len = max(len(ep['name']) for ep in endpoints)
     choices = [f"{ep['name'].ljust(max_name_len)}  [{ep['method']}]" for ep in endpoints]
     choices.append("— Exit —")
-    selected_label = questionary.select("Select an endpoint (or press Esc to exit):\n", choices=choices, style=_SELECT_STYLE, pointer=_POINTER, instruction="").ask()
+    selected_label = questionary.select("Select an endpoint (or press Esc to exit):", choices=choices, style=_SELECT_STYLE, pointer=_POINTER, instruction="").ask()
 
     if not selected_label or selected_label == "— Exit —":
         return None
@@ -319,13 +319,13 @@ def handle_endpoint_creation(existing_ep=None):
             body = None
 
     # 6. Name — required, re-prompt if empty
-    name = questionary.text("Give this endpoint a name", default=defaults.get("name", "")).ask()
+    name = questionary.text("Give this endpoint a name:", default=defaults.get("name", "")).ask()
     if not name or not name.strip():
         console.print("[red]Name is required. Please enter a name.[/red]")
-        name = questionary.text("Give this endpoint a name").ask()
+        name = questionary.text("Give this endpoint a name:").ask()
         while not name or not name.strip():
             console.print("[red]Name is required. Please enter a name.[/red]")
-            name = questionary.text("Give this endpoint a name").ask()
+            name = questionary.text("Give this endpoint a name:").ask()
 
     # Save — base_url_ref is None; base URL is chosen at test time
     manager = EndpointManager()
@@ -339,13 +339,26 @@ def handle_endpoint_creation(existing_ep=None):
 @click.group(invoke_without_command=True)
 @click.pass_context
 def cli(ctx):
-    """Rouint — CLI-Based API Endpoint Management and Testing Tool"""
+    """Rouint — cURL-powered API endpoint management & testing tool.
+
+    Define endpoints once, organize them locally, and test them against
+    any environment directly from your terminal.
+
+    Run without a command to see the full command menu.
+    """
     if ctx.invoked_subcommand is None:
         display_banner()
 
 @cli.command()
 def init():
-    """Initialize the Rouint workspace."""
+    """Initialize the Rouint workspace in the current directory.
+
+    Creates a .rouint-data/ folder with subdirectories for endpoints,
+    environments, and bodies. Also sets up a default 'local' environment
+    pointing to http://localhost:8000.
+
+    Run this once per project before using any other commands.
+    """
     display_header("Workspace Initialization")
     success, message = init_workspace()
     if success:
@@ -356,7 +369,21 @@ def init():
 
 @cli.command(name="add-new-api")
 def add_new_api():
-    """Add a new API endpoint (method, path, headers, body, auth)."""
+    """Define a new API endpoint interactively.
+
+    Walks you through setting up an endpoint step by step:
+
+    \b
+      1. HTTP method  — GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS
+      2. Path         — supports {placeholder} syntax (e.g. /users/{id})
+      3. Headers      — pre-filled defaults based on method
+      4. Auth         — None, Bearer Token, or Custom
+      5. Body         — JSON body for POST / PUT / PATCH
+      6. Name         — a memorable label for the endpoint
+
+    The endpoint is saved locally and can be tested against any
+    registered base URL using 'rouint start-test'.
+    """
     display_header("Add New API Endpoint Definition")
     if not is_initialized():
         console.print("[red]Error: Workspace not initialized. Run 'rouint init' first.[/red]")
@@ -371,7 +398,17 @@ def add_new_api():
 
 @cli.command(name="add-base-url")
 def add_base_url():
-    """Add and manage base URLs (local, staging, production, etc.)."""
+    """Add or delete a base URL environment.
+
+    Environments are named base URLs you test against — e.g.
+    local → http://127.0.0.1:8080, production → https://api.myapp.com.
+
+    Actions available:
+
+    \b
+      Add     — register a new base URL with a label
+      Delete  — remove an existing environment
+    """
     display_header("Manage Global Base URLs")
     if not is_initialized():
         console.print("[red]Error: Workspace not initialized. Run 'rouint init' first.[/red]")
@@ -445,7 +482,18 @@ def add_base_url():
 @cli.command(name="start-test")
 @click.option("--no-metrics", is_flag=True, default=False, help="Hide the metrics box from the output.")
 def start_test(no_metrics):
-    """Select an API endpoint and a base URL, then run the test."""
+    """Run a test against a saved API endpoint.
+
+    Flow: select endpoint → select base URL → fill placeholders → execute.
+
+    Displays a REQUEST box, RESPONSE box (pretty-printed JSON), and a
+    METRICS box (status, response time, size). If a token is detected
+    in the response it is offered for reuse on Bearer-auth endpoints.
+
+    \b
+    Options:
+      --no-metrics   Skip the metrics box for a cleaner output
+    """
     display_header("API Endpoint Test Runner")
     if not is_initialized():
         console.print("[red]Error: Workspace not initialized. Run 'rouint init' first.[/red]")
@@ -665,7 +713,15 @@ def start_test(no_metrics):
 
 @cli.command(name="list-api")
 def list_api():
-    """List and manage saved endpoints."""
+    """List, inspect, edit, or delete saved endpoints.
+
+    Select any saved endpoint to:
+
+    \b
+      Edit              — modify method, path, headers, auth, or body
+      View Configuration — print the raw JSON config
+      Delete            — permanently remove the endpoint
+    """
     display_header("Manage Saved API Endpoints")
     if not is_initialized():
         console.print("[red]Error: Workspace not initialized. Run 'rouint init' first.[/red]")
@@ -709,7 +765,12 @@ def list_api():
 
 @cli.command(name="clear-token")
 def clear_token():
-    """Clear the saved temp token."""
+    """Clear the saved temporary Bearer token.
+
+    When a token is detected in a response during 'rouint start-test',
+    it is saved to .rouint-data/.temp_token for reuse on subsequent
+    Bearer-auth requests. Use this command to remove it.
+    """
     display_header("Clear Saved Temp Token")
     if not is_initialized():
         console.print("[red]Error: Workspace not initialized. Run 'rouint init' first.[/red]")
