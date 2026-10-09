@@ -20,7 +20,7 @@ classifiers = [
     "Operating System :: OS Independent",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "Topic :: Software :: Utilities",
+    "Topic :: Utilities",
     "Topic :: Internet :: WWW/HTTP",
     "Topic :: Software Development :: Testing",
 ]
