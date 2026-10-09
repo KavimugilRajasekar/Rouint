@@ -10,6 +10,8 @@ class CurlResponse:
     headers: Dict[str, str]
     body: str
     elapsed_time: float
+    status_line: str = ""
+    response_size: int = 0
     error: Optional[str] = None
 
 def execute_request(url: str, method: str, headers: Dict[str, str], body: Optional[str] = None) -> CurlResponse:
@@ -25,7 +27,7 @@ def execute_request(url: str, method: str, headers: Dict[str, str], body: Option
         "-i",
         "-s",
         "-X", method,
-        "-w", "\\n%{http_code}\\n%{time_total}",
+        "-w", "\\n%{http_code}\\n%{time_total}\\n%{size_download}",
         url
     ]
 
@@ -50,13 +52,14 @@ def execute_request(url: str, method: str, headers: Dict[str, str], body: Option
         output = process.stdout.strip()
         lines = output.splitlines()
 
-        # The last line is time_total, second to last is http_code (from -w)
+        # The last three lines are: size_download, time_total, http_code (from -w)
         # Note: curl -w output is appended to the end of the response
-        time_total = float(lines[-1])
-        status_code = int(lines[-2])
+        size_download = int(lines[-1])
+        time_total = float(lines[-2])
+        status_code = int(lines[-3])
 
-        # Response headers and body are everything before those two lines
-        response_content = "\n".join(lines[:-2])
+        # Response headers and body are everything before those three lines
+        response_content = "\n".join(lines[:-3])
 
         # Split headers and body
         parts = response_content.split("\r\n\r\n", 1)
@@ -64,20 +67,26 @@ def execute_request(url: str, method: str, headers: Dict[str, str], body: Option
             parts = response_content.split("\n\n", 1)
 
         header_text = parts[0]
-        body = parts[1] if len(parts) > 1 else ""
+        response_body = parts[1] if len(parts) > 1 else ""
+
+        # Parse the status line (first line, e.g. "HTTP/1.1 200 OK")
+        header_lines = header_text.splitlines()
+        status_line = header_lines[0] if header_lines else ""
 
         # Parse headers
-        headers = {}
-        for line in header_text.splitlines()[1:]: # Skip first line (HTTP/1.1 200 OK)
+        response_headers = {}
+        for line in header_lines[1:]:  # Skip first line (HTTP/1.1 200 OK)
             if ":" in line:
                 k, v = line.split(":", 1)
-                headers[k.strip()] = v.strip()
+                response_headers[k.strip()] = v.strip()
 
         return CurlResponse(
             status_code=status_code,
-            headers=headers,
-            body=body,
-            elapsed_time=time_total
+            headers=response_headers,
+            body=response_body,
+            elapsed_time=time_total,
+            status_line=status_line,
+            response_size=size_download
         )
 
     except subprocess.CalledProcessError as e:

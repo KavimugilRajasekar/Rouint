@@ -11,14 +11,23 @@ class EndpointManager:
         self.endpoints_path = self.data_path / ENDPOINTS_DIR
         self.registry_path = self.data_path / REGISTRY_FILE
 
-    def save_endpoint(self, name: str, method: str, path: str, base_url_ref: str, headers: Dict[str, str], auth: Dict[str, Any], body: Optional[str], slug: Optional[str] = None) -> str:
+    def save_endpoint(self, name: str, method: str, path: str, base_url_ref: Optional[str], headers: Dict[str, str], auth: Dict[str, Any], body: Optional[str], slug: Optional[str] = None) -> str:
         """Saves an endpoint configuration to a JSON file. Optionally updates an existing one via slug."""
+        name = name.strip()
+        if not name:
+            raise ValueError("Endpoint name cannot be empty.")
+
+        clean_path = path.strip()
+        if not clean_path.startswith("/"):
+            clean_path = "/" + clean_path
+
         if slug:
-            target_slug = slug
+            target_slug = slug.strip().lower().replace(" ", "-").replace("/", "-")
         else:
-            # Create a slug for the filename
-            slug_gen = name.lower().replace(" ", "-").replace("/", "-")
-            target_slug = slug_gen
+            target_slug = name.lower().replace(" ", "-").replace("/", "-")
+
+        if not target_slug:
+            raise ValueError("Invalid endpoint name resulting in empty slug.")
 
         file_path = self.endpoints_path / f"{target_slug}.json"
 
@@ -33,7 +42,7 @@ class EndpointManager:
             "id": endpoint_id,
             "name": name,
             "method": method,
-            "path": path,
+            "path": clean_path,
             "base_url_ref": base_url_ref,
             "headers": headers,
             "auth": auth,
@@ -48,12 +57,24 @@ class EndpointManager:
 
     def get_endpoint(self, slug: str) -> Optional[Dict[str, Any]]:
         """Loads an endpoint configuration by its slug."""
-        file_path = self.endpoints_path / f"{slug}.json"
+        if not slug or not slug.strip():
+            return None
+        file_path = self.endpoints_path / f"{slug.strip()}.json"
         if not file_path.exists():
             return None
 
-        with open(file_path, "r") as f:
-            return json.load(f)
+        try:
+            with open(file_path, "r") as f:
+                ep = json.load(f)
+            if ep and isinstance(ep, dict) and ep.get("name") and ep.get("path"):
+                p = ep["path"].strip()
+                if not p.startswith("/"):
+                    p = "/" + p
+                ep["path"] = p
+                return ep
+        except Exception:
+            return None
+        return None
 
     def list_endpoints(self) -> List[Dict[str, Any]]:
         """Lists all saved endpoints from the registry."""
@@ -65,9 +86,10 @@ class EndpointManager:
 
         endpoints = []
         for endpoint_id, slug in registry.items():
-            ep = self.get_endpoint(slug)
-            if ep:
-                endpoints.append(ep)
+            if slug:
+                ep = self.get_endpoint(slug)
+                if ep:
+                    endpoints.append(ep)
         return endpoints
 
     def delete_endpoint(self, slug: str) -> bool:

@@ -1,6 +1,6 @@
 # Rouint
 
-A CLI-based API endpoint management and testing tool that wraps `curl`. Define endpoints once, organize them locally, and test them directly from the terminal — no GUI required.
+A CLI-based API endpoint management and testing tool that wraps `curl`. Define endpoints once, organize them locally, and test them against any environment directly from the terminal — no GUI required.
 
 Rouint stores endpoint configurations (method, path, headers, auth, body) in a local `.rouint-data/` directory and executes requests through the system's `curl` installation, giving you the transparency of a raw shell command with the organization of a professional API client.
 
@@ -10,6 +10,7 @@ Rouint stores endpoint configurations (method, path, headers, auth, body) in a l
 - Interactive endpoint creation wizard with sensible defaults
 - Support for GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS methods
 - Custom headers, authentication (Bearer Token, Custom), and JSON request bodies
+- **Multi-environment support** — add local, staging, and production URLs; choose at test time
 - Automatic URL encoding of placeholder values
 - Rich terminal output with formatted tables and color-coded responses
 - Local-first storage — all data stays in your project directory
@@ -56,10 +57,23 @@ This creates:
 └── bodies/              # Request body files
 ```
 
-### 2. Create an endpoint
+### 2. Add your base URLs
+
+Before testing, register the URLs you want to test against (local dev server, staging, production, etc.):
 
 ```bash
-rouint add-new
+rouint add-base-url
+```
+
+The interactive manager lets you:
+- **Add** a new base URL with a label (e.g. `local → http://127.0.0.1:8080`, `production → https://api.myapp.com`)
+- **Delete** an existing URL
+- Add as many environments as you need
+
+### 3. Create an endpoint
+
+```bash
+rouint add-new-api
 ```
 
 The interactive wizard walks you through:
@@ -71,31 +85,35 @@ The interactive wizard walks you through:
 5. **Body** — for POST/PUT/PATCH, optionally provide a JSON body
 6. **Name** — give the endpoint a memorable name
 
+> The endpoint is saved without a base URL attached — you choose which environment to hit each time you test.
+
 The endpoint is saved as a JSON file under `.rouint-data/endpoints/`.
 
-### 3. Test an endpoint
+### 4. Test an endpoint
 
 ```bash
-rouint start
+rouint start-test
 ```
 
-Flow: Select endpoint → Enter placeholder values → Get response.
+Flow: **Select endpoint → Select base URL → Enter placeholder values → Get response.**
 
 Rouint resolves all `{placeholder}` values you provide, URL-encodes them, constructs the final URL, executes the request via `curl`, and displays:
 
-- HTTP status code
-- Response time
-- Response body
+- Request box (method, path, headers, body)
+- Response box (status line, headers, body)
+- Metrics box (HTTP status, response time, response size)
 
-### 4. Manage your collection
+The same endpoint can be tested against any registered base URL — local, staging, or production — without editing it.
+
+### 5. Manage your collection
 
 ```bash
-rouint list
+rouint list-api
 ```
 
-Flow: View table → Select endpoint → (Edit / View Configuration / Delete).
+Flow: Select endpoint → (Edit / View Configuration / Delete).
 
-Displays all saved endpoints in a formatted table with name, method, and path. Select any endpoint to edit its configuration, view the raw JSON, or delete it.
+Displays all saved endpoints. Select any to edit its configuration, view the raw JSON, or delete it.
 
 ## Placeholder System
 
@@ -118,9 +136,21 @@ Placeholder rules:
 | Command | Description |
 |---------|-------------|
 | `rouint init` | Initialize the Rouint workspace |
-| `rouint add-new` | Create a new endpoint interactively |
-| `rouint start` | Select and test a saved endpoint |
-| `rouint list` | View, edit, or delete saved endpoints |
+| `rouint add-base-url` | Add and manage base URLs (local, staging, production, etc.) |
+| `rouint add-new-api` | Create a new API endpoint interactively |
+| `rouint start-test` | Select an endpoint + base URL and run the test |
+| `rouint list-api` | View, edit, or delete saved endpoints |
+| `rouint clear-token` | Clear the saved temp Bearer token |
+
+## Workflow at a Glance
+
+```
+rouint init          # set up workspace (once per project)
+rouint add-base-url  # register: local → http://127.0.0.1:8080
+                     #           server → https://api.myapp.com
+rouint add-new-api   # define: POST /api/v1/auth/login
+rouint start-test    # pick endpoint → pick URL → test!
+```
 
 ## Project Structure
 

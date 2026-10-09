@@ -1,15 +1,99 @@
 import json
+import re
 
 import click
 from rich.console import Console
 from rich.table import Table
-from rouint.utils.config import init_workspace, is_initialized
+from rich.panel import Panel
+from rouint.utils.config import (
+    init_workspace,
+    is_initialized,
+    get_data_path,
+    get_env_path,
+    list_environments,
+    get_base_url,
+    save_environment,
+    TEMP_TOKEN_FILE,
+)
 from rouint.core.manager import EndpointManager
 from rouint.core.parser import extract_placeholders, resolve_placeholders, validate_path
 from rouint.core.executor import execute_request
+from rouint.ui import display_banner, display_header, box_width
 import questionary
 
 console = Console()
+
+# ---------------------------------------------------------------------------
+# Token management helpers
+# ---------------------------------------------------------------------------
+
+def save_temp_token(token: str) -> str:
+    """Persists a token to .rouint-data/.temp_token for reuse within the workspace."""
+    token_path = get_data_path() / TEMP_TOKEN_FILE
+    with open(token_path, "w") as f:
+        f.write(token)
+    # Ensure file is only readable by owner (sensitive)
+    token_path.chmod(0o600)
+    return str(token_path)
+
+def load_temp_token() -> str | None:
+    """Returns the saved temp token, or None if none exists."""
+    token_path = get_data_path() / TEMP_TOKEN_FILE
+    if not token_path.exists():
+        return None
+    return token_path.read_text().strip()
+
+def clear_temp_token() -> bool:
+    """Deletes the temp token file if it exists. Returns True if a token was removed."""
+    token_path = get_data_path() / TEMP_TOKEN_FILE
+    if token_path.exists():
+        token_path.unlink()
+        return True
+    return False
+
+def extract_token_from_response(response) -> str | None:
+    """
+    Attempts to extract a JWT or bearer token from the response.
+    Checks response body (JSON fields) and Authorization / Set-Cookie headers.
+    """
+    # 1. Check response headers
+    for header_key in ("Authorization", "Set-Cookie"):
+        val = response.headers.get(header_key)
+        if val:
+            # Authorization: Bearer <token>
+            bearer_match = re.search(r"Bearer\s+(.+)", val, re.IGNORECASE)
+            if bearer_match:
+                return bearer_match.group(1).strip()
+            # Set-Cookie: token=<jwt>; ...
+            cookie_match = re.search(r"(?:token|access_token|auth_token)=([^;]+)", val, re.IGNORECASE)
+            if cookie_match:
+                return cookie_match.group(1).strip()
+
+    # 2. Check response body (JSON)
+    if response.body:
+        try:
+            data = json.loads(response.body)
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+        # Look for common token field names
+        token_fields = ("access_token", "token", "accessToken", "jwt", "auth_token", "id_token")
+        if isinstance(data, dict):
+            for field in token_fields:
+                if field in data and isinstance(data[field], str):
+                    return data[field]
+
+            # Nested: { "data": { "token": "..." } }
+            if "data" in data and isinstance(data["data"], dict):
+                for field in token_fields:
+                    if field in data["data"] and isinstance(data["data"][field], str):
+                        return data["data"][field]
+
+    return None
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
 
 def select_endpoint():
     """Shared helper to list and select an endpoint."""
@@ -20,162 +104,522 @@ def select_endpoint():
         return None
 
     choices = [f"{ep['name']} [{ep['method']}]" for ep in endpoints]
-    selected_label = questionary.select("Select an endpoint:", choices=choices).ask()
+    choices.append("— Exit —")
+    selected_label = questionary.select("Select an endpoint (or press Esc to exit):", choices=choices).ask()
 
-    if not selected_label:
+    if not selected_label or selected_label == "— Exit —":
         return None
 
     return next(ep for ep in endpoints if f"{ep['name']} [{ep['method']}]" == selected_label)
+
+def select_environment(default_ref=None):
+    """
+    Prompts the user to select an environment/base URL or type a custom one.
+    Returns the environment name (e.g. "local").
+    Falls back to 'local' if no environments are configured.
+    """
+    envs = list_environments()
+
+    if not envs:
+        # No environments configured — ask for a custom URL
+        custom_url = questionary.text("Enter base URL (e.g., http://localhost:8000):").ask()
+        if not custom_url or not custom_url.strip():
+            return "local"
+        custom_url = custom_url.strip()
+        env_name = "custom"
+        save_environment(env_name, custom_url)
+        return env_name
+
+    # Build choice labels showing the URL for clarity
+    choices = []
+    for env in envs:
+        label = f"{env['name']} ({env['base_url']})"
+        choices.append(label)
+    # Add the "custom URL" option
+    choices.append("— Add a new base URL —")
+
+    # Determine default selection
+    default_label = None
+    if default_ref:
+        for env in envs:
+            if env["name"] == default_ref:
+                default_label = f"{env['name']} ({env['base_url']})"
+                break
+    if not default_label:
+        default_label = choices[0]
+
+    selected = questionary.select(
+        "Select a base URL / environment:",
+        choices=choices,
+        default=default_label,
+    ).ask()
+
+    if not selected:
+        return default_ref or "local"
+
+    # Handle custom URL option
+    if selected == "— Add a new base URL —":
+        custom_url = questionary.text("Enter base URL (e.g., https://api.example.com):").ask()
+        if not custom_url or not custom_url.strip():
+            console.print("[yellow]No URL entered. Using default 'local'.[/yellow]")
+            return default_ref or "local"
+        custom_url = custom_url.strip()
+        # Derive a name from the URL (e.g., "https://api.example.com" -> "api-example-com")
+        env_name = custom_url.replace("https://", "").replace("http://", "")
+        env_name = env_name.split("/")[0].replace(".", "-").replace(":", "-")
+        save_environment(env_name, custom_url)
+        console.print(f"[green]✓ Environment '{env_name}' saved.[/green]")
+        return env_name
+
+    # Extract the environment name from the label (before the parenthesis)
+    return selected.split(" (")[0]
 
 def handle_endpoint_creation(existing_ep=None):
     """Shared logic for creating and editing endpoints."""
     # Default values if editing
     defaults = existing_ep or {}
 
-    console.print("[bold blue]Rouint — Endpoint Configuration[/bold blue]\n")
+    console.print("[dim]Base URL is selected at test time — you can test this endpoint against any saved URL.[/dim]\n")
 
-    # 1. Base URL / Environment
-    env = defaults.get("base_url_ref", "local")
-
-    # 2. HTTP Method
+    # 1. HTTP Method
     method = questionary.select(
         "Which method should this endpoint use?",
         choices=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
         default=defaults.get("method")
     ).ask()
+    if not method:
+        console.print("[red]Endpoint creation cancelled.[/red]")
+        return None
 
-    # 3. Path and Placeholders
+    # 2. Path
     path = questionary.text(
         "Enter endpoint path (e.g., /api/v1/users/{user_id})",
         default=defaults.get("path", "")
     ).ask()
+    if not path or not path.strip():
+        console.print("[red]Path is required. Please enter a valid path.[/red]")
+        path = questionary.text("Enter endpoint path").ask()
+        while not path or not path.strip():
+            console.print("[red]Path is required. Please enter a valid path.[/red]")
+            path = questionary.text("Enter endpoint path").ask()
+
+    path = path.strip()
+    if not path.startswith("/"):
+        path = "/" + path
 
     valid, msg = validate_path(path)
     while not valid:
         console.print(f"[red]{msg}[/red]")
         path = questionary.text("Enter endpoint path").ask()
+        if not path or not path.strip():
+            continue
+        path = path.strip()
+        if not path.startswith("/"):
+            path = "/" + path
         valid, msg = validate_path(path)
 
-    # 4. Headers
-    headers = defaults.get("headers", {"Accept": "application/json", "Content-Type": "application/json"})
-    add_header = questionary.confirm("Add/Edit custom headers?", default=True if headers else False).ask()
-    if add_header:
-        # Simple header editor: keep existing and allow adding
-        while True:
-            h_key = questionary.text("Header key (or empty to finish)").ask()
-            if not h_key: break
-            h_val = questionary.text(f"Value for {h_key}").ask()
-            headers[h_key] = h_val
+    # 3. Headers
+    # Smart defaults: always start with Accept; add Content-Type for body methods
+    default_headers = {"Accept": "application/json"}
+    if method in ["POST", "PUT", "PATCH"]:
+        default_headers["Content-Type"] = "application/json"
+    headers = defaults.get("headers") or default_headers
 
-    # 5. Auth
+    # Show current headers
+    if headers:
+        console.print("\n[bold]Current headers:[/bold]")
+        for hk, hv in headers.items():
+            console.print(f"  [cyan]{hk}[/cyan]: {hv}")
+        console.print()
+
+    add_header = questionary.confirm(
+        "Add or edit headers?",
+        default=False
+    ).ask()
+    if add_header:
+        console.print("[dim]Enter header name only (e.g. Authorization), then its value separately.[/dim]")
+        console.print("[dim]Press Enter with an empty name to finish.[/dim]\n")
+        while True:
+            h_key = questionary.text("Header name (e.g. Authorization):").ask()
+            if not h_key or not h_key.strip():
+                break
+            # Guard: user typed "Key: Value" in one shot
+            if ":" in h_key:
+                console.print("[yellow]⚠  Enter ONLY the header name here, not 'Name: Value'.[/yellow]")
+                console.print("[yellow]   Example: Authorization  (then press Enter, then give the value)[/yellow]\n")
+                continue
+            h_key = h_key.strip()
+            h_val = questionary.text(f"Value for '{h_key}':").ask()
+            if h_val is not None:
+                headers[h_key] = h_val.strip()
+
+    # Show final headers
+    console.print("\n[bold]Headers to be saved:[/bold]")
+    for hk, hv in headers.items():
+        if hk.lower() in ("authorization", "auth"):
+            console.print(f"  [cyan]{hk}[/cyan]: [REDACTED]")
+        else:
+            console.print(f"  [cyan]{hk}[/cyan]: {hv}")
+    console.print()
+
+    # 4. Auth
     auth_type = questionary.select(
         "Authentication type?",
         choices=["None", "Bearer Token", "Custom"],
         default=defaults.get("auth", {}).get("type", "None").capitalize()
     ).ask()
-    auth = {"type": auth_type.lower()}
+    auth = {"type": auth_type.lower() if auth_type else "none"}
 
-    # 6. Body
+    # 5. Body
     body = defaults.get("body")
     if method in ["POST", "PUT", "PATCH"]:
-        has_body = questionary.confirm("Does this request have a body?", default=True if body else False).ask()
+        has_body = questionary.confirm(
+            "Does this request have a body?",
+            default=True if body else False
+        ).ask()
         if has_body:
-            body = questionary.text("Enter JSON body", default=body or "").ask()
+            console.print('[dim]Enter raw JSON body. Example: {"username": "alice", "password": "secret"}[/dim]')
+            body = questionary.text(
+                "JSON body:",
+                default=body or ""
+            ).ask()
+            # Validate it's non-empty
+            while not body or not body.strip():
+                console.print("[red]Body cannot be empty. Enter a JSON string or press N above to skip.[/red]")
+                body = questionary.text("JSON body:").ask()
+            # Warn if invalid JSON (don't block, just notify)
+            try:
+                import json as _json
+                _json.loads(body)
+            except ValueError:
+                console.print("[yellow]⚠  Warning: body does not appear to be valid JSON. It will be sent as-is.[/yellow]")
         else:
             body = None
 
-    # 7. Name
+    # 6. Name — required, re-prompt if empty
     name = questionary.text("Give this endpoint a name", default=defaults.get("name", "")).ask()
+    if not name or not name.strip():
+        console.print("[red]Name is required. Please enter a name.[/red]")
+        name = questionary.text("Give this endpoint a name").ask()
+        while not name or not name.strip():
+            console.print("[red]Name is required. Please enter a name.[/red]")
+            name = questionary.text("Give this endpoint a name").ask()
 
-    # Save
+    # Save — base_url_ref is None; base URL is chosen at test time
     manager = EndpointManager()
-    # Determine if we are updating an existing slug
     slug = None
     if existing_ep:
-        # Try to derive slug from the current endpoint's stored name or a known slug
-        # For now, we use a simple derivation since we don't store slug in the ep object
-        slug = name.lower().replace(" ", "-").replace("/", "-") # Simplified
-        # In a real scenario, we'd pass the actual slug used in the filesystem
+        slug = name.lower().replace(" ", "-").replace("/", "-")
 
-    endpoint_id = manager.save_endpoint(name, method, path, env, headers, auth, body, slug=slug)
+    endpoint_id = manager.save_endpoint(name, method, path, None, headers, auth, body, slug=slug)
     return endpoint_id
 
-@click.group()
-def cli():
+@click.group(invoke_without_command=True)
+@click.pass_context
+def cli(ctx):
     """Rouint — CLI-Based API Endpoint Management and Testing Tool"""
-    pass
+    if ctx.invoked_subcommand is None:
+        display_banner()
 
 @cli.command()
 def init():
     """Initialize the Rouint workspace."""
+    display_header("Workspace Initialization")
     success, message = init_workspace()
     if success:
         console.print(f"[green]✓ {message}[/green]")
-        console.print("\nWorkspace: .rouint-data/\nGet started:\n  rouint start\n  rouint list")
+        console.print("\nWorkspace: .rouint-data/\nGet started:\n  rouint add-base-url   # add your local/server URLs\n  rouint add-new-api    # define your API endpoints\n  rouint start-test     # pick endpoint + URL and test!\n  rouint list-api       # list/manage saved endpoints")
     else:
         console.print(f"[red]✗ {message}[/red]")
 
-@cli.command()
-def add_new():
-    """Create a new endpoint interactively."""
+@cli.command(name="add-new-api")
+def add_new_api():
+    """Add a new API endpoint (method, path, headers, body, auth)."""
+    display_header("Add New API Endpoint Definition")
     if not is_initialized():
         console.print("[red]Error: Workspace not initialized. Run 'rouint init' first.[/red]")
         return
 
     id = handle_endpoint_creation()
+    if id is None:
+        console.print("[yellow]Endpoint creation cancelled.[/yellow]")
+        return
     console.print(f"\n[green]✓ Endpoint saved successfully! (ID: {id})[/green]")
+    console.print("[dim]Use 'rouint start-test' to run it against any base URL.[/dim]")
 
-@cli.command()
-def start():
-    """Directly test an API endpoint."""
+@cli.command(name="add-base-url")
+def add_base_url():
+    """Add and manage base URLs (local, staging, production, etc.)."""
+    display_header("Manage Global Base URLs")
     if not is_initialized():
         console.print("[red]Error: Workspace not initialized. Run 'rouint init' first.[/red]")
         return
 
-    selected_ep = select_endpoint()
-    if not selected_ep:
-        console.print("[yellow]No endpoints found or selection cancelled.[/yellow]")
+    while True:
+        envs = list_environments()
+
+        # Show current environments in a table
+        table = Table(title="Configured Environments", title_justify="left")
+        table.add_column("Name", style="cyan")
+        table.add_column("Base URL", style="green")
+        if envs:
+            for e in envs:
+                table.add_row(e["name"], e["base_url"])
+        else:
+            table.add_row("[dim]none[/dim]", "[dim]—[/dim]")
+        console.print(table)
+
+        action = questionary.select(
+            "What would you like to do?",
+            choices=[
+                "Add a new base URL",
+                "Delete an environment",
+                "Back / Exit",
+            ]
+        ).ask()
+
+        if not action or action == "Back / Exit":
+            break
+
+        elif action == "Add a new base URL":
+            console.print("\n[bold]Add a new base URL[/bold]")
+            console.print("[dim]Examples: http://127.0.0.1:8080  |  https://api.myapp.com  |  https://staging.myapp.com[/dim]\n")
+
+            url = questionary.text("Base URL:").ask()
+            if not url or not url.strip():
+                console.print("[yellow]No URL entered. Cancelled.[/yellow]")
+                continue
+            url = url.strip().rstrip("/")  # strip trailing slash
+
+            # Let user name the environment
+            suggested = url.replace("https://", "").replace("http://", "").split("/")[0]
+            suggested = suggested.replace(".", "-").replace(":", "-")
+            env_name = questionary.text(
+                "Give this environment a label (e.g. local, staging, production):",
+                default=suggested
+            ).ask()
+            if not env_name or not env_name.strip():
+                console.print("[yellow]Name is required. Cancelled.[/yellow]")
+                continue
+            env_name = env_name.strip().lower().replace(" ", "-")
+
+            save_environment(env_name, url)
+            console.print(f"\n[green]✓ Environment '[bold]{env_name}[/bold]' → {url} saved![/green]\n")
+
+        elif action == "Delete an environment":
+            if not envs:
+                console.print("[yellow]No environments to delete.[/yellow]")
+                continue
+
+            choices = [f"{e['name']}  ({e['base_url']})" for e in envs]
+            selected = questionary.select("Select environment to delete:", choices=choices).ask()
+            if not selected:
+                continue
+
+            env_name_to_delete = selected.split("  (")[0].strip()
+            confirm = questionary.confirm(
+                f"Delete environment '{env_name_to_delete}'?", default=False
+            ).ask()
+            if confirm:
+                env_file = (get_env_path() / f"{env_name_to_delete}.json")
+                if env_file.exists():
+                    env_file.unlink()
+                    console.print(f"[red]✓ Environment '{env_name_to_delete}' deleted.[/red]")
+                else:
+                    console.print("[yellow]Environment file not found.[/yellow]")
+
+
+
+@cli.command(name="start-test")
+def start_test():
+    """Select an API endpoint and a base URL, then run the test."""
+    display_header("API Endpoint Test Runner")
+    if not is_initialized():
+        console.print("[red]Error: Workspace not initialized. Run 'rouint init' first.[/red]")
         return
 
-    # Resolve Placeholders
-    path = selected_ep['path']
-    placeholders = extract_placeholders(path)
-    values = {}
-    for p in placeholders:
-        val = questionary.text(f"Enter value for {p}").ask()
-        values[p] = val
+    # ── Main loop: select endpoint → select base URL → test ──────────────
+    while True:
+        if not EndpointManager().list_endpoints():
+            console.print("[yellow]No endpoints found. Use 'rouint add-new-api' to create one.[/yellow]")
+            return
 
-    resolved_path = resolve_placeholders(path, values)
+        selected_ep = select_endpoint()
+        if not selected_ep:
+            return  # user cancelled / pressed Esc
 
-    # Final URL construction (simplification: just using local env for now)
-    base_url = "http://localhost:8000"
-    final_url = f"{base_url}{resolved_path}"
+        # ── Select Base URL ───────────────────────────────────────────────
+        envs = list_environments()
+        if not envs:
+            console.print("[yellow]No base URLs configured. Run 'rouint add-base-url' first.[/yellow]")
+            base_url = questionary.text(
+                "Enter a base URL to use now (e.g. http://127.0.0.1:8080):"
+            ).ask()
+            if not base_url or not base_url.strip():
+                console.print("[red]No base URL provided. Aborting.[/red]")
+                return
+            base_url = base_url.strip().rstrip("/")
+        else:
+            env_choices = [f"{e['name']}  →  {e['base_url']}" for e in envs]
+            selected_env_label = questionary.select(
+                "Select a base URL to test against:",
+                choices=env_choices
+            ).ask()
+            if not selected_env_label:
+                return
+            # Extract base_url from the chosen label
+            chosen_env_name = selected_env_label.split("  →  ")[0].strip()
+            base_url = get_base_url(chosen_env_name)
+            console.print(f"[dim]Testing against: [bold]{base_url}[/bold][/dim]\n")
 
-    console.print(f"\n[bold]Testing: {selected_ep['name']}[/bold]")
-    console.print(f"URL: {final_url} ({selected_ep['method']})")
+        # ── Resolve Placeholders ─────────────────────────────────────────
+        path = selected_ep['path']
+        placeholders = extract_placeholders(path)
+        values = {}
+        for p in placeholders:
+            val = questionary.text(f"Enter value for {p}").ask()
+            values[p] = val
 
-    # Execute
-    response = execute_request(
-        url=final_url,
-        method=selected_ep['method'],
-        headers=selected_ep['headers'],
-        body=selected_ep['body']
-    )
+        resolved_path = resolve_placeholders(path, values)
+        clean_base_url = base_url.strip().rstrip("/")
+        if not resolved_path.startswith("/"):
+            resolved_path = "/" + resolved_path
+        final_url = f"{clean_base_url}{resolved_path}"
 
-    # Display Results
-    console.print("\n[bold cyan]RESPONSE[/bold cyan]")
-    console.print("────────────────────────────────────────")
-    if response.error:
-        console.print(f"[red]{response.error}[/red]")
-    else:
-        console.print(f"Status: [green]{response.status_code}[/green]")
-        console.print(f"Time: {response.elapsed_time:.3f}s")
-        console.print("\nBody:\n", response.body)
-    console.print("────────────────────────────────────────")
+        # Build the effective headers, applying temp token if applicable
+        effective_headers = dict(selected_ep.get("headers") or {})
+        auth = selected_ep.get("auth") or {}
+        auth_type = auth.get("type", "none")
 
-@cli.command()
-def list():
+        # If endpoint uses Bearer auth, offer temp token reuse
+        if auth_type in ("bearer token", "bearer"):
+            temp_token = load_temp_token()
+            if temp_token:
+                use_temp = questionary.confirm(
+                    "Use saved temp token for authentication?", default=True
+                ).ask()
+                if use_temp:
+                    effective_headers["Authorization"] = f"Bearer {temp_token}"
+                    console.print("[green]✓ Using saved temp token.[/green]")
+                else:
+                    token = questionary.password("Enter Bearer token:").ask()
+                    if token:
+                        effective_headers["Authorization"] = f"Bearer {token}"
+            else:
+                token = questionary.password("Enter Bearer token:").ask()
+                if token:
+                    effective_headers["Authorization"] = f"Bearer {token}"
+
+        # ── REQUEST box ──────────────────────────────────────────────────
+        box_w = box_width()
+
+        request_lines = []
+        request_lines.append(f"[bold]> {selected_ep['method']} {resolved_path} HTTP/1.1[/bold]")
+        for h_key, h_val in effective_headers.items():
+            if h_key.lower() in ("authorization", "auth"):
+                display_val = "[REDACTED]"
+            else:
+                display_val = h_val
+            request_lines.append(f"  {h_key}: {display_val}")
+        request_body = selected_ep.get("body")
+        request_lines.append("")
+        request_lines.append(f"Request Body: {request_body if request_body else 'None'}")
+
+        console.print(Panel(
+            "\n".join(request_lines),
+            title="[bold blue]REQUEST[/bold blue]",
+            title_align="left",
+            border_style="blue",
+            expand=True,
+            width=box_w,
+        ))
+
+        # Execute
+        console.print(f"\n[dim]Executing: {selected_ep['method']} {final_url}[/dim]\n")
+        response = execute_request(
+            url=final_url,
+            method=selected_ep['method'],
+            headers=effective_headers,
+            body=selected_ep['body']
+        )
+
+        # ── RESPONSE box ─────────────────────────────────────────────────
+        if response.error:
+            console.print(Panel(
+                f"[red]{response.error}[/red]",
+                title="[bold red]RESPONSE[/bold red]",
+                title_align="left",
+                border_style="red",
+                expand=True,
+                width=box_w,
+            ))
+            # Loop back to endpoint list
+            console.print("\n")
+            continue
+
+        response_lines = []
+        response_lines.append(f"[bold]< {response.status_line}[/bold]")
+        for h_key, h_val in response.headers.items():
+            response_lines.append(f"  {h_key}: {h_val}")
+        response_lines.append("")
+        response_lines.append(response.body)
+
+        console.print(Panel(
+            "\n".join(response_lines),
+            title="[bold cyan]RESPONSE[/bold cyan]",
+            title_align="left",
+            border_style="cyan",
+            expand=True,
+            width=box_w,
+        ))
+
+        # ── METRICS box ──────────────────────────────────────────────────
+        time_ms = response.elapsed_time * 1000
+        size_b = response.response_size
+        if size_b < 1024:
+            size_display = f"{size_b} B"
+        else:
+            size_display = f"{size_b / 1024:.1f} KB"
+
+        metrics_lines = [
+            f"HTTP Status:      {response.status_code}",
+            f"Response Time:    {time_ms:.0f} ms",
+            f"Response Size:    {size_display}",
+            f"Result:           HTTP request completed",
+        ]
+
+        result_color = "green" if 200 <= response.status_code < 400 else "yellow"
+        console.print(Panel(
+            "\n".join(metrics_lines),
+            title=f"[bold {result_color}]METRICS[/bold {result_color}]",
+            title_align="left",
+            border_style=result_color,
+            expand=True,
+            width=box_w,
+        ))
+
+        console.print(f"[{result_color}]✓ Response received successfully[/{result_color}]")
+
+        # ── Token capture ────────────────────────────────────────────────
+        extracted_token = extract_token_from_response(response)
+        if extracted_token:
+            save_choice = questionary.confirm(
+                "Token detected in response. Save as temp token for future requests?",
+                default=True
+            ).ask()
+            if save_choice:
+                token_path = save_temp_token(extracted_token)
+                console.print(f"[green]✓ Temp token saved to {token_path}[/green]")
+                console.print("[dim]It will be offered automatically when testing endpoints with Bearer auth.[/dim]")
+                console.print("[dim]Use 'rouint clear-token' to remove it.[/dim]")
+
+        # ── Loop back to endpoint list automatically ─────────────────────
+        console.print("\n[bold]────────────────────────────────────────────[/bold]\n")
+
+@cli.command(name="list-api")
+def list_api():
     """List and manage saved endpoints."""
+    display_header("Manage Saved API Endpoints")
     if not is_initialized():
         console.print("[red]Error: Workspace not initialized. Run 'rouint init' first.[/red]")
         return
@@ -185,19 +629,8 @@ def list():
         endpoints = manager.list_endpoints()
 
         if not endpoints:
-            console.print("[yellow]No endpoints found. Use 'rouint add-new' to create one.[/yellow]")
+            console.print("[yellow]No endpoints found. Use 'rouint add-new-api' to create one.[/yellow]")
             break
-
-        # Display as a table for better visibility
-        table = Table(title="Saved Endpoints")
-        table.add_column("Name", style="cyan")
-        table.add_column("Method", style="magenta")
-        table.add_column("Path", style="green")
-
-        for ep in endpoints:
-            table.add_row(ep['name'], ep['method'], ep['path'])
-
-        console.print(table)
 
         selected_ep = select_endpoint()
         if not selected_ep:
@@ -229,3 +662,16 @@ def list():
                 console.print("[red]✓ Endpoint deleted.[/red]")
         elif action == "Back":
             continue
+
+@cli.command(name="clear-token")
+def clear_token():
+    """Clear the saved temp token."""
+    display_header("Clear Saved Temp Token")
+    if not is_initialized():
+        console.print("[red]Error: Workspace not initialized. Run 'rouint init' first.[/red]")
+        return
+
+    if clear_temp_token():
+        console.print("[green]✓ Temp token cleared successfully.[/green]")
+    else:
+        console.print("[yellow]No temp token found to clear.[/yellow]")

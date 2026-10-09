@@ -61,8 +61,9 @@ Rouint — API Testing Workspace
 Workspace: .rouint-data/
 
 Get started:
-  rouint add-new
-  rouint start
+  rouint add-base-url   # add your local/server URLs
+  rouint add-new-api    # define your API endpoints
+  rouint start-test     # pick endpoint + URL and test!
 ```
 
 If a workspace already exists, Rouint should report that fact and preserve the existing data unless the user explicitly requests a reset.
@@ -72,27 +73,16 @@ If a workspace already exists, Rouint should report that fact and preserve the e
 ### Command
 
 ```bash
-rouint add-new
+rouint add-new-api
 ```
 
 This command starts an interactive endpoint creation wizard.
 
 The wizard should be partially interactive: users provide the essential information, while Rouint uses sensible defaults for optional settings.
 
-### Step 1: Select a base URL or environment
+> **Base URLs are not selected here.** Use `rouint add-base-url` to register your environments (local, staging, production). The base URL is chosen at test time inside `rouint start-test`, so the same endpoint definition can be fired against any environment without duplication.
 
-```text
-Rouint — Create Endpoint
-
-◆ Select a base URL
-│  ● http://localhost:8000
-│  ○ Add a new base URL
-└
-```
-
-The base URL should be stored separately from the endpoint path. This allows users to reuse the same endpoint definition against different environments.
-
-### Step 2: Select the HTTP method
+### Step 1: Select the HTTP method
 
 ```text
 ◆ Which method should this endpoint use?
@@ -108,7 +98,7 @@ The base URL should be stored separately from the endpoint path. This allows use
 └
 ```
 
-### Step 3: Enter the endpoint path and parameter placeholders
+### Step 2: Enter the endpoint path and parameter placeholders
 
 Users should enter the endpoint path themselves, including any placeholders for dynamic values.
 
@@ -163,7 +153,7 @@ Rouint should recognize placeholders enclosed in curly braces and preserve them 
 
 For clarity, a placeholder such as `{user_id}` means that the value is not known yet. It is supplied later when the endpoint is tested.
 
-### Step 4: Configure request headers
+### Step 3: Configure request headers
 
 ```text
 ◆ Configure request headers
@@ -178,7 +168,7 @@ Users should be able to add, edit, and remove headers.
 
 Headers should be stored as part of the endpoint configuration and reused across test executions. Sensitive header values, especially authorization credentials, must be handled securely.
 
-### Step 5: Configure authentication
+### Step 4: Configure authentication
 
 Rouint should support:
 
@@ -190,7 +180,7 @@ For JWT authentication, users should be able to enter a token through a masked p
 
 Tokens should not be printed in full in the terminal or stored in plaintext by default.
 
-### Step 6: Configure the request body
+### Step 5: Configure the request body
 
 For methods that commonly send a body, such as POST, PUT, and PATCH, Rouint should ask whether the user wants to attach one.
 
@@ -217,7 +207,7 @@ The body should be saved separately and referenced by the endpoint configuration
 
 Rouint should also support file attachments for multipart requests and appropriate raw or binary request bodies.
 
-### Step 7: Name and save the endpoint
+### Step 6: Name and save the endpoint
 
 ```text
 ◆ Give this endpoint a name
@@ -242,12 +232,12 @@ After confirmation, Rouint saves the endpoint template and makes it available fo
 ### Command
 
 ```bash
-rouint start
+rouint start-test
 ```
 
-This command opens the interactive endpoint selector.
+This command opens the interactive endpoint selector, then prompts for a base URL, and then runs the test.
 
-Users should be able to select a base URL or environment and then choose an endpoint to test.
+Flow: **Select endpoint → Select base URL → Resolve placeholders → Execute → View results.**
 
 Example:
 
@@ -543,7 +533,8 @@ project-root/
 │   │
 │   ├── schemas/
 │   ├── history/
-│   └── .gitignore
+│   ├── .gitignore
+│   └── .temp_token          # Saved temp token (file permissions: 0600)
 │
 └── application-source/
 ```
@@ -577,6 +568,7 @@ This is an illustrative schema. Rouint should formally define and version its co
 * Environment configurations should be independent of endpoint definitions.
 * Actual values entered during interactive testing should not be written back to the endpoint template by default.
 * Credentials must not be committed to version control.
+* Temp tokens are stored in `.rouint-data/.temp_token` with `0600` permissions and excluded from version control.
 * Endpoint discovery should use an index or registry when useful.
 * Saved configuration should be validated and migrated safely when the schema changes.
 
@@ -592,19 +584,53 @@ Rouint must not assume that a hidden directory is automatically secure. File per
 
 The `.rouint-data/.gitignore` configuration should help exclude local secrets while allowing users to version-control non-sensitive endpoint definitions and sample bodies.
 
+### Temporary Token Capture and Reuse
+
+Rouint can detect tokens (JWT, bearer tokens) in API responses and offer to save them as a temp token for reuse in subsequent requests within the same workspace.
+
+**Token detection sources:**
+
+* Response body JSON fields: `access_token`, `token`, `accessToken`, `jwt`, `auth_token`, `id_token`
+* Nested JSON: `data.token`, `data.access_token`, etc.
+* Response headers: `Authorization: Bearer <token>`, `Set-Cookie: token=<value>`
+
+**Workflow:**
+
+1. After executing a request, Rouint scans the response for tokens.
+2. If a token is found, the user is prompted: "Token detected in response. Save as temp token for future requests?"
+3. If accepted, the token is saved to `.rouint-data/.temp_token` with file permissions set to `0600` (owner read/write only).
+4. When testing an endpoint with Bearer auth and a temp token exists, Rouint offers to reuse it automatically: "Use saved temp token for authentication?"
+5. The user can decline and enter a different token manually.
+
+**Security considerations:**
+
+* The temp token file is created with `0600` permissions (owner-only access).
+* The token file is listed in `.rouint-data/.gitignore` to prevent accidental commits.
+* Tokens are redacted as `[REDACTED]` in the REQUEST box display.
+* The temp token is workspace-scoped — it is stored in the local `.rouint-data/` directory and does not leave the machine.
+
+**Clearing the temp token:**
+
+```bash
+rouint clear-token
+```
+
+This command deletes the saved temp token file. If no token exists, it reports that there is nothing to clear. The command requires an initialized workspace.
+
 ## 12. Proposed Command Structure
 
 | Command               | Purpose                                      |
 | --------------------- | -------------------------------------------- |
 | `rouint init`         | Initialize the workspace                     |
-| `rouint add-new`      | Create an endpoint interactively             |
-| `rouint start`        | Open the interactive endpoint selector       |
+| `rouint add-base-url` | Add and manage base URLs (local, staging, production, etc.) |
+| `rouint add-new-api`  | Create an API endpoint interactively         |
+| `rouint start-test`   | Select endpoint + base URL and run the test  |
 | `rouint add-new-from` | Create an endpoint from an existing endpoint |
-| `rouint list`         | List saved endpoints                         |
+| `rouint list-api`     | List, edit, or delete saved endpoints        |
+| `rouint clear-token`  | Clear the saved temp token                   |
 | `rouint edit`         | Edit an endpoint                             |
 | `rouint show`         | Display an endpoint configuration            |
 | `rouint delete`       | Delete an endpoint after confirmation        |
-| `rouint env`          | Manage environments                          |
 | `rouint history`      | Inspect previous test executions, if enabled |
 | `rouint --help`       | Display command help                         |
 | `rouint --version`    | Display the installed version                |
@@ -649,7 +675,7 @@ cURL exit codes must be handled separately from HTTP status codes. A connection 
 * Seven-entry endpoint viewport.
 * Keyboard navigation, search, and paging.
 * Runtime path and query parameter prompts.
-* `rouint start`.
+* `rouint start-test`.
 * Endpoint editing and duplication.
 * `rouint add-new-from`.
 

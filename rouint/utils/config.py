@@ -10,6 +10,7 @@ REGISTRY_FILE = "registry.json"
 ENV_DIR = "environments"
 ENDPOINTS_DIR = "endpoints"
 BODIES_DIR = "bodies"
+TEMP_TOKEN_FILE = ".temp_token"
 
 def get_workspace_root() -> Path:
     """Returns the path to the current working directory as workspace root."""
@@ -22,6 +23,52 @@ def get_data_path() -> Path:
 def is_initialized() -> bool:
     """Checks if the Rouint workspace is initialized."""
     return (get_data_path() / CONFIG_FILE).exists()
+
+def get_env_path() -> Path:
+    """Returns the absolute path to the environments directory."""
+    return get_data_path() / ENV_DIR
+
+def list_environments() -> list[dict[str, str]]:
+    """
+    Lists all configured environments as a list of dicts:
+    [{"name": "local", "base_url": "http://localhost:8000"}, ...]
+    Returns an empty list if no environments are found.
+    """
+    env_path = get_env_path()
+    if not env_path.exists():
+        return []
+
+    envs = []
+    for env_file in sorted(env_path.glob("*.json")):
+        with open(env_file, "r") as f:
+            data = json.load(f)
+        env_name = env_file.stem  # e.g. "local" from "local.json"
+        envs.append({
+            "name": env_name,
+            "base_url": data.get("base_url", "")
+        })
+    return envs
+
+def get_base_url(env_name: str) -> str:
+    """Returns the base_url for a given environment name, or empty string if not found."""
+    env_path = get_env_path() / f"{env_name}.json"
+    if not env_path.exists():
+        return ""
+    with open(env_path, "r") as f:
+        data = json.load(f)
+    return data.get("base_url", "")
+
+def save_environment(env_name: str, base_url: str):
+    """
+    Saves a new environment to .rouint-data/environments/<env_name>.json.
+    If the environment already exists, it is overwritten.
+    """
+    env_dir = get_env_path()
+    env_dir.mkdir(parents=True, exist_ok=True)
+    env_path = env_dir / f"{env_name}.json"
+    clean_url = base_url.strip().rstrip("/")
+    with open(env_path, "w") as f:
+        json.dump({"base_url": clean_url}, f, indent=2)
 
 def init_workspace():
     """Initializes the Rouint workspace directory structure."""
