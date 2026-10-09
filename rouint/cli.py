@@ -381,17 +381,6 @@ def add_base_url():
     while True:
         envs = list_environments()
 
-        # Show current environments in a table
-        table = Table(title="Configured Environments", title_justify="left")
-        table.add_column("Name", style="cyan")
-        table.add_column("Base URL", style="green")
-        if envs:
-            for e in envs:
-                table.add_row(e["name"], e["base_url"])
-        else:
-            table.add_row("[dim]none[/dim]", "[dim]—[/dim]")
-        console.print(table)
-
         action = questionary.select("What would you like to do?", choices=[
             "Add a new base URL",
             "Delete an environment",
