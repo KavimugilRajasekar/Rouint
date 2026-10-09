@@ -18,7 +18,7 @@ def resolve_placeholders(path: str, values: Dict[str, str]) -> str:
     for key, value in values.items():
         placeholder = f"{{{key}}}"
         if placeholder in resolved_path:
-            resolved_path = resolved_path.replace(placeholder, quote(value))
+            resolved_path = resolved_path.replace(placeholder, quote(value, safe="/!"))
 
     return resolved_path
 

@@ -21,7 +21,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install .
+        pip install -e ".[dev]"
 
     - name: Verify Installation
       run: |
@@ -29,5 +29,8 @@ jobs:
 
     - name: Check for Syntax Errors
       run: |
-        # Run a simple check to ensure all modules can be imported
         python -c "import rouint.cli; import rouint.core.executor; import rouint.core.manager; import rouint.core.parser"
+
+    - name: Build Package
+      run: |
+        python -m build

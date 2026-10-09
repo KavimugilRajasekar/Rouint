@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *.class
 venv/
+.venv/
 .env
 
 # Rouint Data
@@ -19,3 +20,8 @@ server.log
 *.egg-info/
 *.egg.txt
 build/
+dist/
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/

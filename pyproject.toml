@@ -1,0 +1,53 @@
+[project]
+name = "rouint"
+version = "1.0.0"
+description = "CLI-Based API Endpoint Management and Testing Tool"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    {name = "Kavimugil Rajasekar", email = "kavimugil28@gmail.com"}
+]
+license = "MIT"
+keywords = ["api", "testing", "curl", "cli", "tui", "endpoint-management"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Topic :: Software :: Utilities",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = [
+    "click>=8.1,<9",
+    "rich>=13.0,<16",
+    "questionary>=2.0,<3",
+]
+
+[project.urls]
+Homepage = "https://github.com/KavimugilRajasekar/Rouint"
+Repository = "https://github.com/KavimugilRajasekar/Rouint"
+Issues = "https://github.com/KavimugilRajasekar/Rouint/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "build>=1.0",
+]
+
+[project.scripts]
+rouint = "rouint.cli:cli"
+
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["rouint*"]

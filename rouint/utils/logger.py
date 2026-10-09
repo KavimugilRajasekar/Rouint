@@ -1,0 +1,1 @@
+"""Logging utilities for Rouint (placeholder for future structured logging)."""

@@ -1,0 +1,1 @@
+"""UI components for Rouint (placeholder for future TUI widgets)."""
