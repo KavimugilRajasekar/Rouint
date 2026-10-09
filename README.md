@@ -2,18 +2,24 @@
 
 A CLI-based API endpoint management and testing tool that wraps `curl`. Define endpoints once, organize them locally, and test them against any environment directly from the terminal — no GUI required.
 
-Rouint stores endpoint configurations (method, path, headers, auth, body) in a local `.rouint-data/` directory and executes requests through the system's `curl` installation, giving you the transparency of a raw shell command with the organization of a professional API client.
+Rouint stores endpoint configurations (method, path, headers, auth, body, files) in a local `.rouint-data/` directory and executes requests through the system's `curl` installation, giving you the transparency of a raw shell command with the organization of a professional API client.
 
 ## Features
 
 - Define reusable API endpoint templates with `{placeholder}` parameters
-- Interactive endpoint creation wizard with sensible defaults
+- Interactive endpoint creation wizard with step-back navigation (Esc to go back)
 - Support for GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS methods
-- Custom headers, authentication (Bearer Token, Custom), and JSON request bodies
+- Custom headers with method-aware defaults
+- Authentication — Bearer Token (with temp token reuse) and Custom header auth
+- JSON request body with inline validation
+- **File attachment support** — multipart/form-data via `curl -F`
 - **Multi-environment support** — add local, staging, and production URLs; choose at test time
 - Automatic URL encoding of placeholder values
-- Rich terminal output with formatted tables and color-coded responses
+- Pretty-printed JSON in both REQUEST and RESPONSE boxes
+- Full-width terminal panels that adapt to your terminal size
+- Input validation — base URLs, JSON bodies, and file paths checked on entry
 - Local-first storage — all data stays in your project directory
+- `.gitignore` auto-generated to keep environments and tokens out of version control
 
 ## Requirements
 
@@ -40,35 +46,37 @@ pip install -e ".[dev]"
 
 ### 1. Initialize your workspace
 
-Create the local `.rouint-data/` directory where endpoints and environments are stored.
-
 ```bash
 rouint init
 ```
 
-This creates:
+Creates `.rouint-data/` in your current directory:
+
 ```
 .rouint-data/
+├── .gitignore           # Keeps environments, tokens, and bodies out of git
 ├── config.json          # Workspace configuration
 ├── registry.json        # Endpoint registry (maps IDs to slugs)
 ├── endpoints/           # Endpoint configuration files
-├── environments/        # Environment base URLs
-│   └── local.json       # Default local environment (http://localhost:8000)
-└── bodies/              # Request body files
+├── environments/        # Base URLs (gitignored)
+└── bodies/              # Request body files (gitignored)
 ```
 
 ### 2. Add your base URLs
-
-Before testing, register the URLs you want to test against (local dev server, staging, production, etc.):
 
 ```bash
 rouint add-base-url
 ```
 
-The interactive manager lets you:
-- **Add** a new base URL with a label (e.g. `local → http://127.0.0.1:8080`, `production → https://api.myapp.com`)
-- **Delete** an existing URL
-- Add as many environments as you need
+Choose **Add a new base URL**, enter the URL and a label:
+
+```
+local      → http://127.0.0.1:8080
+staging    → https://staging.myapp.com
+production → https://api.myapp.com
+```
+
+To remove a URL, choose **Delete an environment**.
 
 ### 3. Create an endpoint
 
@@ -76,18 +84,19 @@ The interactive manager lets you:
 rouint add-new-api
 ```
 
-The interactive wizard walks you through:
+A 7-step wizard — press **Esc** at any step to go back to the previous one:
 
-1. **HTTP method** — choose from GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS
-2. **Path** — enter the endpoint path with optional placeholders (e.g., `/api/v1/users/{user_id}?active={is_active}`)
-3. **Headers** — add custom headers or use defaults (`Accept: application/json`, `Content-Type: application/json`)
-4. **Authentication** — choose None, Bearer Token, or Custom
-5. **Body** — for POST/PUT/PATCH, optionally provide a JSON body
-6. **Name** — give the endpoint a memorable name
+| Step | What you set |
+|------|-------------|
+| 1 | HTTP method — GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS |
+| 2 | Path — with optional `{placeholder}` syntax |
+| 3 | Headers — method-aware defaults, add/edit freely |
+| 4 | Auth — None, Bearer Token, or Custom header |
+| 5 | Body — JSON, validated on entry (POST/PUT/PATCH/DELETE) |
+| 6 | Files — multipart attachments (POST/PUT/PATCH/DELETE) |
+| 7 | Name — a memorable label |
 
-> The endpoint is saved without a base URL attached — you choose which environment to hit each time you test.
-
-The endpoint is saved as a JSON file under `.rouint-data/endpoints/`.
+The endpoint is saved without a base URL — you choose the environment at test time.
 
 ### 4. Test an endpoint
 
@@ -95,15 +104,21 @@ The endpoint is saved as a JSON file under `.rouint-data/endpoints/`.
 rouint start-test
 ```
 
-Flow: **Select endpoint → Select base URL → Enter placeholder values → Get response.**
+Flow: **Select endpoint → Select base URL → Fill placeholders → Execute**
 
-Rouint resolves all `{placeholder}` values you provide, URL-encodes them, constructs the final URL, executes the request via `curl`, and displays:
+Displays three panels:
 
-- Request box (method, path, headers, body)
-- Response box (status line, headers, body)
-- Metrics box (HTTP status, response time, response size)
+- **REQUEST** — method, path, headers, body (pretty-printed JSON)
+- **RESPONSE** — status, headers, body (pretty-printed JSON)
+- **METRICS** — HTTP status, response time, response size
 
-The same endpoint can be tested against any registered base URL — local, staging, or production — without editing it.
+Use `--no-metrics` to hide the metrics panel:
+
+```bash
+rouint start-test --no-metrics
+```
+
+If a token is detected in the response (Bearer/JWT), Rouint offers to save it as a temp token and automatically reuses it on subsequent Bearer-auth requests.
 
 ### 5. Manage your collection
 
@@ -111,35 +126,74 @@ The same endpoint can be tested against any registered base URL — local, stagi
 rouint list-api
 ```
 
-Flow: Select endpoint → (Edit / View Configuration / Delete).
-
-Displays all saved endpoints. Select any to edit its configuration, view the raw JSON, or delete it.
+Select any endpoint to:
+- **Edit** — re-run the wizard with existing values pre-filled; Esc steps back
+- **View Configuration** — print the raw JSON
+- **Delete** — remove permanently after confirmation
 
 ## Placeholder System
 
-Placeholders let you define a path template once and supply values at test time. Use `{parameter_name}` syntax:
+Use `{name}` syntax anywhere in the path or query string:
 
-| Path | Placeholders | Example Input |
+| Path | Placeholders | Example input |
 |------|-------------|---------------|
-| `/users/{user_id}` | `user_id` | `123` |
-| `/search?q={query}` | `query` | `hello world!` |
-| `/users/{user_id}/posts/{post_id}` | `user_id`, `post_id` | `123`, `456` |
+| `/users/{id}` | `id` | `usr-101` |
+| `/search?q={query}` | `query` | `hello world` → URL-encoded |
+| `/users/{id}/posts/{post_id}` | `id`, `post_id` | `123`, `456` |
 
-Placeholder rules:
-- Names must be alphanumeric + underscore (`[a-zA-Z0-9_]`)
-- Names must be unique within an endpoint (no duplicates)
+Rules:
+- Names must match `[a-zA-Z0-9_]`
+- Names must be unique within an endpoint
 - Braces must be balanced
-- Values are URL-encoded automatically (spaces → `%20`, etc.)
+- Values are URL-encoded automatically at test time
+
+## File Attachments
+
+For POST/PUT/PATCH/DELETE endpoints, you can attach files during creation:
+
+```
+File path: /home/user/photo.jpg
+Form field name: avatar
+```
+
+At test time, Rouint sends the request as `multipart/form-data` via `curl -F`. The `Content-Type` header is removed automatically — curl sets the correct boundary.
+
+## Authentication
+
+| Type | Behaviour |
+|------|-----------|
+| None | No auth header added |
+| Bearer Token | Prompts for token; offers saved temp token if available |
+| Custom | Prompts for header name and value; saved in endpoint config |
+
+**Temp token workflow:**
+1. Login endpoint returns a token → Rouint detects it
+2. "Save as temp token?" → saved to `.rouint-data/.temp_token` (chmod 0600)
+3. Next Bearer-auth request → "Use saved temp token?" → auto-filled
+4. `rouint clear-token` → removes it
+
+## Git Safety
+
+`rouint init` creates `.rouint-data/.gitignore` that protects:
+
+```gitignore
+environments/    # real base URLs
+.temp_token      # live Bearer tokens
+bodies/          # may contain credentials
+*.secret.json    # explicitly sensitive files
+```
+
+Safe to commit: `endpoints/`, `registry.json`, `config.json`
 
 ## Commands Reference
 
 | Command | Description |
 |---------|-------------|
 | `rouint init` | Initialize the Rouint workspace |
-| `rouint add-base-url` | Add and manage base URLs (local, staging, production, etc.) |
-| `rouint add-new-api` | Create a new API endpoint interactively |
+| `rouint add-base-url` | Add or delete a base URL environment |
+| `rouint add-new-api` | Define a new API endpoint interactively |
 | `rouint start-test` | Select an endpoint + base URL and run the test |
-| `rouint list-api` | View, edit, or delete saved endpoints |
+| `rouint list-api` | List, inspect, edit, or delete saved endpoints |
 | `rouint clear-token` | Clear the saved temp Bearer token |
 
 ## Workflow at a Glance
@@ -147,43 +201,36 @@ Placeholder rules:
 ```
 rouint init          # set up workspace (once per project)
 rouint add-base-url  # register: local → http://127.0.0.1:8080
-                     #           server → https://api.myapp.com
 rouint add-new-api   # define: POST /api/v1/auth/login
 rouint start-test    # pick endpoint → pick URL → test!
+rouint list-api      # manage saved endpoints
 ```
 
 ## Project Structure
 
 ```
 Rouint/
-├── pyproject.toml          # Package metadata, dependencies, build config
-├── LICENSE                 # MIT License
-├── README.md               # This file
+├── pyproject.toml
+├── LICENSE
+├── README.md
 ├── rouint/
 │   ├── __init__.py         # Package init, exposes __version__
 │   ├── cli.py              # Click CLI commands and interactive flows
 │   ├── core/
-│   │   ├── __init__.py
-│   │   ├── executor.py     # curl wrapper and response parsing
-│   │   ├── manager.py      # Endpoint CRUD operations (save, list, delete)
-│   │   └── parser.py       # Placeholder extraction, resolution, path validation
+│   │   ├── executor.py     # curl wrapper, file upload, URL/file validation
+│   │   ├── manager.py      # Endpoint CRUD (save, list, delete)
+│   │   └── parser.py       # Placeholder extraction, resolution, validation
 │   ├── utils/
-│   │   ├── __init__.py
-│   │   ├── config.py        # Workspace init, data paths, constants
-│   │   └── logger.py       # Logging utilities (reserved for future use)
+│   │   └── config.py       # Workspace init, data paths, .gitignore generation
 │   └── ui/
-│       ├── __init__.py
-│       ├── components.py   # UI components (reserved for future use)
-│       └── screens.py       # UI screens (reserved for future use)
+│       └── components.py   # Banner, header, box_width
 └── tests/
-    ├── __init__.py
-    ├── test_executor.py    # Tests for curl execution and response parsing
-    └── test_parser.py      # Tests for placeholder extraction and validation
+    ├── test_executor.py
+    ├── test_parser.py
+    └── test_manager.py
 ```
 
 ## Development
-
-### Set up the dev environment
 
 ```bash
 git clone https://github.com/KavimugilRajasekar/Rouint.git
@@ -193,30 +240,11 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-### Run tests
-
 ```bash
-pytest tests/ -v
+pytest tests/ -v        # run tests
+python -m build         # build wheel + sdist
+twine upload dist/*     # publish to PyPI
 ```
-
-### Build the package
-
-```bash
-python -m build
-```
-
-This produces:
-- `dist/rouint-1.0.0-py3-none-any.whl` — the wheel
-- `dist/rouint-1.0.0.tar.gz` — the source distribution
-
-### Publish to PyPI
-
-```bash
-pip install twine
-twine upload dist/*
-```
-
-You'll need a [PyPI account](https://pypi.org/account/register/) and an API token. After publishing, users can install with `pip install rouint`.
 
 ## License
 
