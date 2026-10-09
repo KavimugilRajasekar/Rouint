@@ -119,14 +119,15 @@ def select_endpoint():
     if not endpoints:
         return None
 
-    choices = [f"{ep['name']} [{ep['method']}]" for ep in endpoints]
+    max_name_len = max(len(ep['name']) for ep in endpoints)
+    choices = [f"{ep['name'].ljust(max_name_len)}  [{ep['method']}]" for ep in endpoints]
     choices.append("— Exit —")
-    selected_label = questionary.select("Select an endpoint (or press Esc to exit):", choices=choices, style=_SELECT_STYLE, pointer=_POINTER, instruction="").ask()
+    selected_label = questionary.select("Select an endpoint (or press Esc to exit):\n", choices=choices, style=_SELECT_STYLE, pointer=_POINTER, instruction="").ask()
 
     if not selected_label or selected_label == "— Exit —":
         return None
 
-    return next(ep for ep in endpoints if f"{ep['name']} [{ep['method']}]" == selected_label)
+    return next(ep for ep in endpoints if ep['name'] == selected_label.split("  [")[0].strip())
 
 def select_environment(default_ref=None):
     """
@@ -452,194 +453,215 @@ def start_test(no_metrics):
 
     # ── Main loop: select endpoint → select base URL → test ──────────────
     while True:
-        if not EndpointManager().list_endpoints():
-            console.print("[yellow]No endpoints found. Use 'rouint add-new-api' to create one.[/yellow]")
-            return
-
-        selected_ep = select_endpoint()
-        if not selected_ep:
-            return  # user cancelled / pressed Esc
-
-        # ── Select Base URL ───────────────────────────────────────────────
-        envs = list_environments()
-        if not envs:
-            console.print("[yellow]No base URLs configured. Run 'rouint add-base-url' first.[/yellow]")
-            base_url = questionary.text(
-                "Enter a base URL to use now (e.g. http://127.0.0.1:8080):"
-            ).ask()
-            if not base_url or not base_url.strip():
-                console.print("[red]No base URL provided. Aborting.[/red]")
+        try:
+            if not EndpointManager().list_endpoints():
+                console.print("[yellow]No endpoints found. Use 'rouint add-new-api' to create one.[/yellow]")
                 return
-            base_url = base_url.strip().rstrip("/")
-        else:
-            env_choices = [f"{e['name']}  →  {e['base_url']}" for e in envs]
-            selected_env_label = questionary.select("Select a base URL to test against:", choices=env_choices, style=_SELECT_STYLE, pointer=_POINTER, instruction="").ask()
-            if not selected_env_label:
-                return
-            # Extract base_url from the chosen label
-            chosen_env_name = selected_env_label.split("  →  ")[0].strip()
-            base_url = get_base_url(chosen_env_name)
-            console.print(f"[dim]Testing against: [bold]{base_url}[/bold][/dim]\n")
 
-        # ── Resolve Placeholders ─────────────────────────────────────────
-        path = selected_ep['path']
-        placeholders = extract_placeholders(path)
-        values = {}
-        for p in placeholders:
-            val = questionary.text(f"Enter value for {p}").ask()
-            values[p] = val
+            selected_ep = select_endpoint()
+            if not selected_ep:
+                return  # user cancelled / pressed Esc
 
-        resolved_path = resolve_placeholders(path, values)
-        clean_base_url = base_url.strip().rstrip("/")
-        if not resolved_path.startswith("/"):
-            resolved_path = "/" + resolved_path
-        final_url = f"{clean_base_url}{resolved_path}"
-
-        # Build the effective headers, applying temp token if applicable
-        effective_headers = dict(selected_ep.get("headers") or {})
-        auth = selected_ep.get("auth") or {}
-        auth_type = auth.get("type", "none")
-
-        # If endpoint uses Bearer auth, offer temp token reuse
-        if auth_type in ("bearer token", "bearer"):
-            temp_token = load_temp_token()
-            if temp_token:
-                use_temp = questionary.confirm(
-                    "Use saved temp token for authentication?", default=True
+            # ── Select Base URL ───────────────────────────────────────────────
+            envs = list_environments()
+            if not envs:
+                console.print("[yellow]No base URLs configured. Run 'rouint add-base-url' first.[/yellow]")
+                base_url = questionary.text(
+                    "Enter a base URL to use now (e.g. http://127.0.0.1:8080):"
                 ).ask()
-                if use_temp:
-                    effective_headers["Authorization"] = f"Bearer {temp_token}"
-                    console.print("[green]✓ Using saved temp token.[/green]")
+                if not base_url or not base_url.strip():
+                    console.print("[red]No base URL provided. Aborting.[/red]")
+                    return
+                base_url = base_url.strip().rstrip("/")
+            else:
+                env_choices = [f"{e['name']}  →  {e['base_url']}" for e in envs]
+                selected_env_label = questionary.select("Select a base URL to test against:", choices=env_choices, style=_SELECT_STYLE, pointer=_POINTER, instruction="").ask()
+                if not selected_env_label:
+                    return
+                chosen_env_name = selected_env_label.split("  →  ")[0].strip()
+                base_url = get_base_url(chosen_env_name)
+                console.print(f"[dim]Testing against: [bold]{base_url}[/bold][/dim]\n")
+
+            # ── Resolve Placeholders ─────────────────────────────────────────
+            path = selected_ep['path']
+            placeholders = extract_placeholders(path)
+            values = {}
+            cancelled = False
+            for p in placeholders:
+                val = questionary.text(f"Enter value for {p}:", style=_SELECT_STYLE).ask()
+                if val is None:
+                    console.print("[yellow]Cancelled.[/yellow]")
+                    cancelled = True
+                    break
+                while not val.strip():
+                    console.print(f"[red]Value for '{p}' cannot be empty.[/red]")
+                    val = questionary.text(f"Enter value for {p}:", style=_SELECT_STYLE).ask()
+                    if val is None:
+                        cancelled = True
+                        break
+                if cancelled:
+                    break
+                values[p] = val.strip()
+            if cancelled:
+                continue
+
+            resolved_path = resolve_placeholders(path, values)
+            clean_base_url = base_url.strip().rstrip("/")
+            if not resolved_path.startswith("/"):
+                resolved_path = "/" + resolved_path
+            final_url = f"{clean_base_url}{resolved_path}"
+
+            # Build the effective headers, applying temp token if applicable
+            effective_headers = dict(selected_ep.get("headers") or {})
+            auth = selected_ep.get("auth") or {}
+            auth_type = auth.get("type", "none")
+
+            # If endpoint uses Bearer auth, offer temp token reuse
+            if auth_type in ("bearer token", "bearer"):
+                temp_token = load_temp_token()
+                if temp_token:
+                    use_temp = questionary.confirm(
+                        "Use saved temp token for authentication?", default=True
+                    ).ask()
+                    if use_temp:
+                        effective_headers["Authorization"] = f"Bearer {temp_token}"
+                        console.print("[green]✓ Using saved temp token.[/green]")
+                    else:
+                        token = questionary.password("Enter Bearer token:").ask()
+                        if token:
+                            effective_headers["Authorization"] = f"Bearer {token}"
                 else:
                     token = questionary.password("Enter Bearer token:").ask()
                     if token:
                         effective_headers["Authorization"] = f"Bearer {token}"
+
+            # ── REQUEST box ──────────────────────────────────────────────────
+            request_lines = []
+            request_lines.append(f"[bold]> {selected_ep['method']} {resolved_path} HTTP/1.1[/bold]")
+            for h_key, h_val in effective_headers.items():
+                if h_key.lower() in ("authorization", "auth"):
+                    display_val = "[REDACTED]"
+                else:
+                    display_val = h_val
+                request_lines.append(f"  {h_key}: {display_val}")
+            request_body = selected_ep.get("body")
+            request_lines.append("")
+            if request_body:
+                try:
+                    parsed_body = json.loads(request_body)
+                    pretty_body = json.dumps(parsed_body, indent=2)
+                    request_lines.append("Request Body:")
+                    for line in pretty_body.splitlines():
+                        request_lines.append(f"  {line}")
+                except (json.JSONDecodeError, TypeError):
+                    request_lines.append(f"Request Body: {request_body}")
             else:
-                token = questionary.password("Enter Bearer token:").ask()
-                if token:
-                    effective_headers["Authorization"] = f"Bearer {token}"
+                request_lines.append("Request Body: None")
 
-        # ── REQUEST box ──────────────────────────────────────────────────
-
-        request_lines = []
-        request_lines.append(f"[bold]> {selected_ep['method']} {resolved_path} HTTP/1.1[/bold]")
-        for h_key, h_val in effective_headers.items():
-            if h_key.lower() in ("authorization", "auth"):
-                display_val = "[REDACTED]"
-            else:
-                display_val = h_val
-            request_lines.append(f"  {h_key}: {display_val}")
-        request_body = selected_ep.get("body")
-        request_lines.append("")
-        if request_body:
-            try:
-                parsed_body = json.loads(request_body)
-                pretty_body = json.dumps(parsed_body, indent=2)
-                request_lines.append("Request Body:")
-                for line in pretty_body.splitlines():
-                    request_lines.append(f"  {line}")
-            except (json.JSONDecodeError, TypeError):
-                request_lines.append(f"Request Body: {request_body}")
-        else:
-            request_lines.append("Request Body: None")
-
-        console.print(Panel(
-                    "\n".join(request_lines),
-                    title="[bold blue]REQUEST[/bold blue]",
-                    title_align="left",
-                    border_style="blue",
-                    expand=True,
-                ))
-
-        # Execute
-        console.print(f"\n[dim]Executing: {selected_ep['method']} {final_url}[/dim]\n")
-        response = execute_request(
-            url=final_url,
-            method=selected_ep['method'],
-            headers=effective_headers,
-            body=selected_ep['body']
-        )
-
-        # ── RESPONSE box ─────────────────────────────────────────────────
-        if response.error:
             console.print(Panel(
-                        f"[red]{response.error}[/red]",
-                        title="[bold red]RESPONSE[/bold red]",
-                        title_align="left",
-                        border_style="red",
-                        expand=True,
-                    ))
-            # Loop back to endpoint list
-            console.print("\n")
-            continue
+                "\n".join(request_lines),
+                title="[bold blue]REQUEST[/bold blue]",
+                title_align="left",
+                border_style="blue",
+                expand=True,
+            ))
 
-        response_lines = []
-        response_lines.append(f"[bold]< {response.status_line}[/bold]")
-        for h_key, h_val in response.headers.items():
-            response_lines.append(f"  {h_key}: {h_val}")
-        response_lines.append("")
-        if response.body:
-            try:
-                parsed_resp = json.loads(response.body)
-                pretty_resp = json.dumps(parsed_resp, indent=2)
-                for line in pretty_resp.splitlines():
-                    response_lines.append(f"  {line}")
-            except (json.JSONDecodeError, TypeError):
-                response_lines.append(response.body)
-        else:
-            response_lines.append("  (empty body)")
+            # Execute
+            console.print(f"\n[dim]Executing: {selected_ep['method']} {final_url}[/dim]\n")
+            response = execute_request(
+                url=final_url,
+                method=selected_ep['method'],
+                headers=effective_headers,
+                body=selected_ep['body']
+            )
 
-        console.print(Panel(
-                    "\n".join(response_lines),
-                    title="[bold cyan]RESPONSE[/bold cyan]",
+            # ── RESPONSE box ─────────────────────────────────────────────────
+            if response.error:
+                console.print(Panel(
+                    f"[red]{response.error}[/red]",
+                    title="[bold red]RESPONSE[/bold red]",
                     title_align="left",
-                    border_style="cyan",
+                    border_style="red",
                     expand=True,
                 ))
+                console.print()
+                continue
 
-        # ── METRICS box ──────────────────────────────────────────────────
-        if not no_metrics:
-            time_ms = response.elapsed_time * 1000
-            size_b = response.response_size
-            if size_b < 1024:
-                size_display = f"{size_b} B"
+            response_lines = []
+            response_lines.append(f"[bold]< {response.status_line}[/bold]")
+            for h_key, h_val in response.headers.items():
+                response_lines.append(f"  {h_key}: {h_val}")
+            response_lines.append("")
+            if response.body:
+                try:
+                    parsed_resp = json.loads(response.body)
+                    pretty_resp = json.dumps(parsed_resp, indent=2)
+                    for line in pretty_resp.splitlines():
+                        response_lines.append(f"  {line}")
+                except (json.JSONDecodeError, TypeError):
+                    response_lines.append(response.body)
             else:
-                size_display = f"{size_b / 1024:.1f} KB"
+                response_lines.append("  (empty body)")
 
-            metrics_lines = [
-                f"HTTP Status:      {response.status_code}",
-                f"Response Time:    {time_ms:.0f} ms",
-                f"Response Size:    {size_display}",
-                f"Result:           HTTP request completed",
-            ]
+            console.print(Panel(
+                "\n".join(response_lines),
+                title="[bold cyan]RESPONSE[/bold cyan]",
+                title_align="left",
+                border_style="cyan",
+                expand=True,
+            ))
+
+            # ── METRICS box ──────────────────────────────────────────────────
+            if not no_metrics:
+                time_ms = response.elapsed_time * 1000
+                size_b = response.response_size
+                if size_b < 1024:
+                    size_display = f"{size_b} B"
+                else:
+                    size_display = f"{size_b / 1024:.1f} KB"
+
+                metrics_lines = [
+                    f"HTTP Status:      {response.status_code}",
+                    f"Response Time:    {time_ms:.0f} ms",
+                    f"Response Size:    {size_display}",
+                    f"Result:           HTTP request completed",
+                ]
+
+                result_color = "green" if 200 <= response.status_code < 400 else "yellow"
+                console.print(Panel(
+                    "\n".join(metrics_lines),
+                    title=f"[bold {result_color}]METRICS[/bold {result_color}]",
+                    title_align="left",
+                    border_style=result_color,
+                    expand=True,
+                ))
 
             result_color = "green" if 200 <= response.status_code < 400 else "yellow"
-            console.print(Panel(
-                        "\n".join(metrics_lines),
-                        title=f"[bold {result_color}]METRICS[/bold {result_color}]",
-                        title_align="left",
-                        border_style=result_color,
-                        expand=True,
-                    ))
+            console.print(f"[{result_color}]✓ Response received successfully[/{result_color}]")
 
-        result_color = "green" if 200 <= response.status_code < 400 else "yellow"
-        console.print(f"[{result_color}]✓ Response received successfully[/{result_color}]")
+            # ── Token capture ────────────────────────────────────────────────
+            extracted_token = extract_token_from_response(response)
+            if extracted_token:
+                save_choice = questionary.confirm(
+                    "Token detected in response. Save as temp token for future requests?",
+                    default=True
+                ).ask()
+                if save_choice:
+                    token_path = save_temp_token(extracted_token)
+                    console.print(f"[green]✓ Temp token saved to {token_path}[/green]")
+                    console.print("[dim]It will be offered automatically when testing endpoints with Bearer auth.[/dim]")
+                    console.print("[dim]Use 'rouint clear-token' to remove it.[/dim]")
 
-        # ── Token capture ────────────────────────────────────────────────
-        extracted_token = extract_token_from_response(response)
-        if extracted_token:
-            save_choice = questionary.confirm(
-                "Token detected in response. Save as temp token for future requests?",
-                default=True
-            ).ask()
-            if save_choice:
-                token_path = save_temp_token(extracted_token)
-                console.print(f"[green]✓ Temp token saved to {token_path}[/green]")
-                console.print("[dim]It will be offered automatically when testing endpoints with Bearer auth.[/dim]")
-                console.print("[dim]Use 'rouint clear-token' to remove it.[/dim]")
+            # ── Loop back ────────────────────────────────────────────────────
+            console.print()
 
-        # ── Loop back to endpoint list automatically ─────────────────────
-        console.print()
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Cancelled.[/yellow]")
+            return
+        except Exception as e:
+            console.print(f"\n[red]✗ Unexpected error: {e}[/red]")
+            console.print("[dim]If this persists, report it at https://github.com/KavimugilRajasekar/Rouint/issues[/dim]")
+            return
 
 @cli.command(name="list-api")
 def list_api():

@@ -12,14 +12,15 @@ def extract_placeholders(path: str) -> List[str]:
 def resolve_placeholders(path: str, values: Dict[str, str]) -> str:
     """
     Replaces placeholders in the path with provided values.
-    Values are URL-encoded.
+    Values are URL-encoded. None values are skipped.
     """
     resolved_path = path
     for key, value in values.items():
+        if value is None:
+            continue
         placeholder = f"{{{key}}}"
         if placeholder in resolved_path:
-            resolved_path = resolved_path.replace(placeholder, quote(value, safe="/!"))
-
+            resolved_path = resolved_path.replace(placeholder, quote(str(value), safe="/!"))
     return resolved_path
 
 def validate_path(path: str) -> Tuple[bool, str]:
