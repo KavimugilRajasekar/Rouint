@@ -58,3 +58,16 @@ def test_type_annotations_compatibility():
 
     hints_display = typing.get_type_hints(display_header)
     assert "return" in hints_display
+
+    from rouint.ui.screens import format_menu_line, get_workspace_state, get_menu_items, show_interactive_menu
+    hints_format = typing.get_type_hints(format_menu_line)
+    assert hints_format.get("return") == str
+
+    hints_state = typing.get_type_hints(get_workspace_state)
+    assert "return" in hints_state
+
+    hints_menu = typing.get_type_hints(get_menu_items)
+    assert "return" in hints_menu
+
+    hints_show = typing.get_type_hints(show_interactive_menu)
+    assert hints_show.get("return") == typing.Optional[str]

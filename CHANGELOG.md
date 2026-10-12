@@ -8,6 +8,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [1.1.1] — 2026-10-12
 
+### Added
+
+- **State-aware interactive CLI launcher** — typing `rouint` without subcommands opens a clean, keyboard-navigable interactive menu (`ui/screens.py`) using Questionary and prompt_toolkit, allowing instant command selection.
+- **Dynamic command availability** — dynamically detects workspace state without modifying files: `init` is only shown in fresh/uninitialized workspaces and hidden thereafter; `add-base-url` displays `(required — no URLs configured yet)` when no base URLs are configured; `add-new-api` displays `(required — no endpoints saved yet)` when no endpoints are saved; `start-test` is disabled until both base URLs and endpoints exist with state-specific hints, and hints that `--no-metrics` is available; `list-api` is disabled when no endpoints exist; `clear-token` is disabled with `(no token saved)` when no Bearer token exists; `help` offers an inline command reference panel.
+- **Seamless interactive session workflow** — users are retained inside the Command Launcher loop after subcommands like `init` complete rather than dumping them back to the terminal. Redundant command lists (such as `init`'s `Get started:` guide) are suppressed during interactive sessions, and the menu state dynamically updates immediately.
+- **Once-per-session banner rendering** — the Rouint ASCII logo and workspace banner is displayed strictly once per session. Subsequent subcommand screens and menu re-renders emit only their section headers, eliminating duplicate banners in the terminal.
+- **Answered selection styling & clean whitespace** — once an option is selected, the command name is highlighted in bright cyan bold (`class:answer`) while the description and hint are styled in dark grey (`class:ansibrightblack`), with excessive menu table padding whitespace stripped cleanly.
+- **Strict terminal alignment** — consistent column layout across every menu entry (`name` padded to 16, `desc` padded to 34) ensuring all em dashes (`—`) and opening parentheses (`(`) align vertically across all states. Long descriptions are clamped gracefully.
+- **Dark grey hint styling** — parenthesized hints are styled in dark grey (`\033[90m...\033[0m`) without color leakage into command names, descriptions, or subsequent menu items.
+- **Direct command execution & clean exit** — selecting an enabled option invokes its existing Click handler directly. Selecting `Exit` or pressing `Esc`/`Ctrl+C` prints a dimmed, timestamped `Cancelled by user` notification and exits cleanly.
+
 ### Fixed
 
 - **Windows hidden folder** — `.rouint-data/` is now marked as a hidden directory on Windows immediately after creation using `SetFileAttributesW` (`FILE_ATTRIBUTE_HIDDEN`, `ctypes`), so it behaves identically to `.git` — invisible in File Explorer without requiring "Show hidden files". Linux and macOS are unaffected; the dot-prefix convention already handles visibility there.
@@ -19,7 +30,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
-## [1.1.0] — 2026-09-XX
+## [1.1.0] — 2026-10-12
 
 ### Added
 
@@ -37,7 +48,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
-## [1.0.0] — 2026-XX-XX
+## [1.0.0] — 2026-10-11
 
 ### Added
 
