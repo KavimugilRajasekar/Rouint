@@ -318,36 +318,6 @@ python -m build
 python -m twine check dist/*
 ```
 
-### Branch workflow
-
-1. Create a feature branch from `main`: `git switch -c feature/my-feature`
-2. Implement and test your changes.
-3. Open a Pull Request targeting `main`.
-4. CI runs on Ubuntu and Windows across Python 3.9–3.13.
-5. After review and CI passes, merge the PR.
-
-### Creating a release
-
-1. Update the version in `pyproject.toml` and `rouint/__init__.py`.
-2. Merge all changes into `main`.
-3. Create a GitHub Release (e.g., tag `v1.1.0`).
-4. The `publish.yml` workflow automatically builds and publishes to PyPI.
-
-### Configuring PyPI Trusted Publishing
-
-To enable automatic PyPI publishing, configure a Trusted Publisher on PyPI:
-
-1. Go to [pypi.org/manage/project/rouint/settings/publishing/](https://pypi.org/manage/project/rouint/settings/publishing/)
-2. Add a new publisher with these settings:
-   - **Owner:** `KavimugilRajasekar`
-   - **Repository:** `Rouint`
-   - **Workflow name:** `publish.yml`
-   - **Environment name:** `pypi`
-3. On GitHub, create an environment named `pypi` at:
-   `https://github.com/KavimugilRajasekar/Rouint/settings/environments`
-
-No API token is needed — publishing uses OpenID Connect (OIDC).
-
 ## Supported Python Versions
 
 - Python 3.9
