@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import json
 import os
 import platform
 import re
 import sys
 from pathlib import Path as _Path
+from typing import Optional
 
 # On Windows consoles running legacy encodings (like cp1252), reconfigure stdout/stderr to utf-8
 if sys.platform == "win32":
@@ -77,7 +80,7 @@ def save_temp_token(token: str) -> str:
             pass  # Best-effort; Windows home dirs are usually private
     return str(token_path)
 
-def load_temp_token() -> str | None:
+def load_temp_token() -> Optional[str]:
     """Returns the saved temp token, or None if none exists."""
     token_path = get_data_path() / TEMP_TOKEN_FILE
     if not token_path.exists():
@@ -92,7 +95,7 @@ def clear_temp_token() -> bool:
         return True
     return False
 
-def extract_token_from_response(response) -> str | None:
+def extract_token_from_response(response) -> Optional[str]:
     """
     Attempts to extract a JWT or bearer token from the response.
     Checks response body (JSON fields) and Authorization / Set-Cookie headers.
