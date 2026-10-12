@@ -32,7 +32,14 @@ from rouint.utils.config import (
 from rouint.core.manager import EndpointManager
 from rouint.core.parser import extract_placeholders, resolve_placeholders, validate_path
 from rouint.core.executor import execute_request, validate_url
-from rouint.ui import display_banner, display_header, box_width
+from rouint.ui import (
+    display_banner,
+    display_header,
+    box_width,
+    interactive_launcher,
+    is_in_launcher,
+    reset_banner_state,
+)
 import questionary
 
 console = Console(legacy_windows=False)
@@ -396,8 +403,9 @@ def cli(ctx):
 
     Run without a command to see the full command menu.
     """
+    reset_banner_state()
     if ctx.invoked_subcommand is None:
-        display_banner()
+        interactive_launcher(ctx)
 
 @cli.command()
 def init():
@@ -413,7 +421,8 @@ def init():
     success, message = init_workspace()
     if success:
         console.print(f"[green]✓ {message}[/green]")
-        console.print("\nWorkspace: .rouint-data/\nGet started:\n  rouint add-base-url   # add your local/server URLs\n  rouint add-new-api    # define your API endpoints\n  rouint start-test     # pick endpoint + URL and test!\n  rouint list-api       # list/manage saved endpoints")
+        if not is_in_launcher():
+            console.print("\nWorkspace: .rouint-data/\nGet started:\n  rouint add-base-url   # add your local/server URLs\n  rouint add-new-api    # define your API endpoints\n  rouint start-test     # pick endpoint + URL and test!\n  rouint list-api       # list/manage saved endpoints")
     else:
         console.print(f"[red]✗ {message}[/red]")
 
@@ -444,7 +453,8 @@ def add_new_api():
         console.print("[yellow]Endpoint creation cancelled.[/yellow]")
         return
     console.print(f"\n[green]✓ Endpoint saved successfully! (ID: {id})[/green]")
-    console.print("[dim]Use 'rouint start-test' to run it against any base URL.[/dim]")
+    if not is_in_launcher():
+        console.print("[dim]Use 'rouint start-test' to run it against any base URL.[/dim]")
 
 @cli.command(name="add-base-url")
 def add_base_url():

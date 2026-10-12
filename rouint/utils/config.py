@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import logging
 from pathlib import Path
@@ -79,6 +80,16 @@ def init_workspace():
 
     try:
         data_path.mkdir(exist_ok=True)
+
+        # On Windows, set the hidden attribute so .rouint-data behaves like
+        # .git — hidden in Explorer without needing "Show hidden files" enabled.
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                ctypes.windll.kernel32.SetFileAttributesW(str(data_path), 0x02)  # FILE_ATTRIBUTE_HIDDEN
+            except Exception:
+                pass  # Non-fatal: folder still works, just not hidden
+
         (data_path / ENV_DIR).mkdir(exist_ok=True)
         (data_path / ENDPOINTS_DIR).mkdir(exist_ok=True)
         (data_path / BODIES_DIR).mkdir(exist_ok=True)

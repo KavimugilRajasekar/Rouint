@@ -277,8 +277,8 @@ class TestWindowsIntegration:
             {"Accept": "application/json"},
         )
         # httpbin might be slow or down; check we at least get a response
-        if resp.error and "network" in resp.error.lower():
-            pytest.skip("httpbin.org unreachable")
+        if (resp.error and "network" in resp.error.lower()) or resp.status_code in (502, 503, 504):
+            pytest.skip("httpbin.org unreachable or temporarily unavailable")
         assert resp.status_code == 200
         assert resp.body  # Should have JSON body
         assert resp.elapsed_time > 0
@@ -290,8 +290,8 @@ class TestWindowsIntegration:
             {"Content-Type": "application/json", "Accept": "application/json"},
             body='{"test": "value"}',
         )
-        if resp.error and "network" in resp.error.lower():
-            pytest.skip("httpbin.org unreachable")
+        if (resp.error and "network" in resp.error.lower()) or resp.status_code in (502, 503, 504):
+            pytest.skip("httpbin.org unreachable or temporarily unavailable")
         assert resp.status_code == 200
 
     def test_real_404(self):
@@ -300,8 +300,8 @@ class TestWindowsIntegration:
             "GET",
             {},
         )
-        if resp.error and "network" in resp.error.lower():
-            pytest.skip("httpbin.org unreachable")
+        if (resp.error and "network" in resp.error.lower()) or resp.status_code in (502, 503, 504):
+            pytest.skip("httpbin.org unreachable or temporarily unavailable")
         assert resp.status_code == 404
         assert resp.error is None  # Server responded
 
@@ -312,6 +312,6 @@ class TestWindowsIntegration:
             {"Content-Type": "application/json"},
             body='{"name": "日本語テスト", "emoji": "🎉"}',
         )
-        if resp.error and "network" in resp.error.lower():
-            pytest.skip("httpbin.org unreachable")
+        if (resp.error and "network" in resp.error.lower()) or resp.status_code in (502, 503, 504):
+            pytest.skip("httpbin.org unreachable or temporarily unavailable")
         assert resp.status_code == 200
