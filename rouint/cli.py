@@ -1,5 +1,8 @@
 import json
+import os
+import platform
 import re
+from pathlib import Path as _Path
 
 import click
 from rich.console import Console
@@ -49,7 +52,21 @@ def save_temp_token(token: str) -> str:
     with open(token_path, "w") as f:
         f.write(token)
     # Ensure file is only readable by owner (sensitive)
-    token_path.chmod(0o600)
+    if platform.system().lower() != "windows":
+        token_path.chmod(0o600)
+    else:
+        # On Windows, restrict file access to the current user only
+        try:
+            import subprocess as _sp
+            username = os.environ.get("USERNAME", "")
+            if username:
+                _sp.run(
+                    ["icacls", str(token_path), "/inheritance:r",
+                     "/grant:r", f"{username}:(R,W)"],
+                    capture_output=True, check=False,
+                )
+        except Exception:
+            pass  # Best-effort; Windows home dirs are usually private
     return str(token_path)
 
 def load_temp_token() -> str | None:
