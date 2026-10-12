@@ -30,7 +30,7 @@ from rouint import __version__
 # Shared console instance
 # ---------------------------------------------------------------------------
 
-console = Console()
+console = Console(legacy_windows=False)
 
 # ---------------------------------------------------------------------------
 # Constants
