@@ -194,6 +194,28 @@ class TestWindowsExecutorMocked:
 
     @patch("rouint.platforms.windows.executor.shutil.which")
     @patch("rouint.platforms.windows.executor.subprocess.run")
+    def test_4xx_error_still_returns_response(self, mock_run, mock_which):
+        mock_which.side_effect = lambda x: "pwsh" if x == "pwsh" else None
+        result_json = {
+            "status_code": 404,
+            "status_line": "HTTP/1.1 404 Not Found",
+            "headers": {"Content-Type": "text/plain"},
+            "body": "Not Found",
+            "elapsed_ms": 50,
+            "response_size": 9,
+            "error": None,
+        }
+        mock_run.return_value = MagicMock(
+            stdout=json.dumps(result_json), stderr="", returncode=0,
+        )
+
+        resp = win_execute_request("http://test.com", "GET", {})
+        assert resp.status_code == 404
+        assert resp.body == "Not Found"
+        assert resp.error is None  # Server responded
+
+    @patch("rouint.platforms.windows.executor.shutil.which")
+    @patch("rouint.platforms.windows.executor.subprocess.run")
     def test_5xx_error_still_returns_response(self, mock_run, mock_which):
         mock_which.side_effect = lambda x: "pwsh" if x == "pwsh" else None
         result_json = {
