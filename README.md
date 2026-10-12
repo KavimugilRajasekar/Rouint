@@ -1,8 +1,8 @@
 # Rouint
 
-A CLI-based API endpoint management and testing tool that wraps `curl`. Define endpoints once, organize them locally, and test them against any environment directly from the terminal — no GUI required.
+A CLI-based API endpoint management and testing tool. Define endpoints once, organize them locally, and test them against any environment directly from the terminal — no GUI required.
 
-Rouint stores endpoint configurations (method, path, headers, auth, body, files) in a local `.rouint-data/` directory and executes requests through the system's `curl` installation, giving you the transparency of a raw shell command with the organization of a professional API client.
+Rouint stores endpoint configurations (method, path, headers, auth, body, files) in a local `.rouint-data/` directory and executes requests using the system's native HTTP tools — `curl` on Linux/macOS and PowerShell on Windows — giving you the transparency of a raw command with the organization of a professional API client.
 
 ## Features
 
@@ -12,7 +12,7 @@ Rouint stores endpoint configurations (method, path, headers, auth, body, files)
 - Custom headers with method-aware defaults
 - Authentication — Bearer Token (with temp token reuse) and Custom header auth
 - JSON request body with inline validation
-- **File attachment support** — multipart/form-data via `curl -F`
+- **File attachment support** — multipart/form-data uploads
 - **Multi-environment support** — add local, staging, and production URLs; choose at test time
 - Automatic URL encoding of placeholder values
 - Pretty-printed JSON in both REQUEST and RESPONSE boxes
@@ -20,18 +20,61 @@ Rouint stores endpoint configurations (method, path, headers, auth, body, files)
 - Input validation — base URLs, JSON bodies, and file paths checked on entry
 - Local-first storage — all data stays in your project directory
 - `.gitignore` auto-generated to keep environments and tokens out of version control
+- **Cross-platform** — native backends for Linux/macOS (cURL) and Windows (PowerShell)
 
 ## Requirements
 
+### All platforms
+
 - Python 3.9 or higher
-- `curl` installed and available on your `PATH`
+
+### Linux / macOS
+
+- `curl` installed and available on your `PATH` (pre-installed on most systems)
+
+### Windows
+
+- PowerShell 5.1 (Windows PowerShell, included with Windows 10/11) or PowerShell 7+ (`pwsh`)
+- No additional software required — PowerShell is included with Windows
+
+## Platform Backends
+
+Rouint automatically selects the appropriate HTTP backend based on your operating system:
+
+| Platform | Backend | Tool |
+|----------|---------|------|
+| Linux | cURL | `curl` subprocess |
+| macOS | cURL | `curl` subprocess |
+| Windows | PowerShell | `Invoke-WebRequest` via `pwsh` or `powershell.exe` |
+
+The backend is selected transparently — all CLI commands and endpoint configurations work identically across platforms.
+
+### Supported PowerShell versions
+
+- **PowerShell 7+** (`pwsh`) — preferred, supports native `-Form` parameter for file uploads
+- **Windows PowerShell 5.1** (`powershell.exe`) — supported with .NET-based multipart upload fallback
+
+Rouint prefers `pwsh` (PowerShell 7+) if available, and falls back to `powershell.exe` (Windows PowerShell 5.1). If neither is found, a clear error message is displayed.
+
+### Platform limitations
+
+- On Windows, file uploads on PowerShell 5.1 use a .NET `HttpClient`-based approach which may behave slightly differently from PowerShell 7+'s native `-Form` parameter.
+- Request timing on Windows uses a .NET `Stopwatch` which provides millisecond-level accuracy.
 
 ## Installation
 
 ### From PyPI
 
+**Linux / macOS:**
+
 ```bash
 pip install rouint
+```
+
+**Windows:**
+
+```powershell
+py -m pip install rouint
 ```
 
 ### From source (for development)
@@ -156,19 +199,21 @@ File path: /home/user/photo.jpg
 Form field name: avatar
 ```
 
-At test time, Rouint sends the request as `multipart/form-data` via `curl -F`. The `Content-Type` header is removed automatically — curl sets the correct boundary.
+At test time, Rouint sends the request as `multipart/form-data`:
+- **Linux/macOS:** via `curl -F` (curl sets the correct boundary automatically)
+- **Windows:** via PowerShell's `-Form` parameter (PS 7+) or .NET `MultipartFormDataContent` (PS 5.1)
 
 ## Authentication
 
 | Type | Behaviour |
-|------|-----------|
+|------|-----------| 
 | None | No auth header added |
 | Bearer Token | Prompts for token; offers saved temp token if available |
 | Custom | Prompts for header name and value; saved in endpoint config |
 
 **Temp token workflow:**
 1. Login endpoint returns a token → Rouint detects it
-2. "Save as temp token?" → saved to `.rouint-data/.temp_token` (chmod 0600)
+2. "Save as temp token?" → saved to `.rouint-data/.temp_token`
 3. Next Bearer-auth request → "Use saved temp token?" → auto-filled
 4. `rouint clear-token` → removes it
 
@@ -214,37 +259,96 @@ Rouint/
 ├── LICENSE
 ├── README.md
 ├── rouint/
-│   ├── __init__.py         # Package init, exposes __version__
-│   ├── cli.py              # Click CLI commands and interactive flows
+│   ├── __init__.py             # Package init, exposes __version__
+│   ├── cli.py                  # Click CLI commands and interactive flows
 │   ├── core/
-│   │   ├── executor.py     # curl wrapper, file upload, URL/file validation
-│   │   ├── manager.py      # Endpoint CRUD (save, list, delete)
-│   │   └── parser.py       # Placeholder extraction, resolution, validation
+│   │   ├── executor.py         # Shared execution interface & platform dispatch
+│   │   ├── manager.py          # Endpoint CRUD (save, list, delete)
+│   │   └── parser.py           # Placeholder extraction, resolution, validation
+│   ├── platforms/
+│   │   ├── __init__.py         # Platform detection
+│   │   ├── linux/
+│   │   │   └── executor.py     # cURL-based HTTP backend
+│   │   └── windows/
+│   │       └── executor.py     # PowerShell-based HTTP backend
 │   ├── utils/
-│   │   └── config.py       # Workspace init, data paths, .gitignore generation
+│   │   └── config.py           # Workspace init, data paths, .gitignore generation
 │   └── ui/
-│       └── components.py   # Banner, header, box_width
+│       └── components.py       # Banner, header, box_width
 └── tests/
-    ├── test_executor.py
-    ├── test_parser.py
-    └── test_manager.py
+    ├── test_executor.py        # Shared + platform executor tests
+    ├── test_parser.py          # Placeholder/path tests
+    ├── test_manager.py         # Endpoint CRUD tests
+    ├── test_platform.py        # Platform detection tests
+    └── test_windows.py         # Windows-specific backend tests
 ```
 
 ## Development
+
+### Setup
 
 ```bash
 git clone https://github.com/KavimugilRajasekar/Rouint.git
 cd Rouint
 python -m venv .venv
+
+# Linux / macOS
 source .venv/bin/activate
+
+# Windows
+.venv\Scripts\activate
+
 pip install -e ".[dev]"
 ```
 
+### Running tests
+
 ```bash
-pytest tests/ -v        # run tests
-python -m build         # build wheel + sdist
-twine upload dist/*     # publish to PyPI
+# All platforms
+pytest tests/ -v
+
+# Build and validate package
+python -m build
+python -m twine check dist/*
 ```
+
+### Branch workflow
+
+1. Create a feature branch from `main`: `git switch -c feature/my-feature`
+2. Implement and test your changes.
+3. Open a Pull Request targeting `main`.
+4. CI runs on Ubuntu and Windows across Python 3.9–3.13.
+5. After review and CI passes, merge the PR.
+
+### Creating a release
+
+1. Update the version in `pyproject.toml` and `rouint/__init__.py`.
+2. Merge all changes into `main`.
+3. Create a GitHub Release (e.g., tag `v1.1.0`).
+4. The `publish.yml` workflow automatically builds and publishes to PyPI.
+
+### Configuring PyPI Trusted Publishing
+
+To enable automatic PyPI publishing, configure a Trusted Publisher on PyPI:
+
+1. Go to [pypi.org/manage/project/rouint/settings/publishing/](https://pypi.org/manage/project/rouint/settings/publishing/)
+2. Add a new publisher with these settings:
+   - **Owner:** `KavimugilRajasekar`
+   - **Repository:** `Rouint`
+   - **Workflow name:** `publish.yml`
+   - **Environment name:** `pypi`
+3. On GitHub, create an environment named `pypi` at:
+   `https://github.com/KavimugilRajasekar/Rouint/settings/environments`
+
+No API token is needed — publishing uses OpenID Connect (OIDC).
+
+## Supported Python Versions
+
+- Python 3.9
+- Python 3.10
+- Python 3.11
+- Python 3.12
+- Python 3.13
 
 ## License
 

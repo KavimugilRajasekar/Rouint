@@ -1,3 +1,17 @@
+"""
+Shared HTTP execution interface for Rouint.
+
+This module provides:
+- The ``HttpResponse`` dataclass used by all platform backends.
+- Shared validation functions (``validate_url``, ``validate_files``).
+- The ``execute_request`` dispatcher that selects the appropriate
+  platform backend at runtime.
+
+The legacy ``CurlResponse`` name is preserved as an alias for backward
+compatibility with existing tests and imports.
+"""
+
+import platform
 import subprocess
 import time
 import json
@@ -5,8 +19,10 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 
+
 @dataclass
-class CurlResponse:
+class HttpResponse:
+    """Unified HTTP response container used by all platform backends."""
     status_code: int
     headers: Dict[str, str]
     body: str
@@ -14,6 +30,10 @@ class CurlResponse:
     status_line: str = ""
     response_size: int = 0
     error: Optional[str] = None
+
+
+# Backward-compatible alias — existing tests import CurlResponse
+CurlResponse = HttpResponse
 
 
 def validate_url(url: str) -> tuple[bool, str]:
@@ -44,112 +64,49 @@ def validate_files(files: List[Dict[str, str]]) -> tuple[bool, str]:
     return True, ""
 
 
+def _get_platform_backend():
+    """
+    Import and return the appropriate platform-specific executor module.
+
+    Returns the module's ``execute_request`` function.
+    """
+    system = platform.system().lower()
+
+    if system == "windows":
+        from rouint.platforms.windows.executor import execute_request as _execute
+        return _execute
+    else:
+        # Linux, macOS, and other Unix-like systems use the cURL backend
+        from rouint.platforms.linux.executor import execute_request as _execute
+        return _execute
+
+
 def execute_request(
     url: str,
     method: str,
     headers: Dict[str, str],
     body: Optional[str] = None,
     files: Optional[List[Dict[str, str]]] = None,
-) -> CurlResponse:
+) -> HttpResponse:
     """
-    Executes an HTTP request using the system curl utility.
+    Executes an HTTP request using the appropriate platform backend.
 
-    When files are provided, the request is sent as multipart/form-data
-    using curl's -F flag. The body (if any) is included as a form field
-    named 'data'. Content-Type should not be set manually for multipart
-    requests — curl sets it automatically with the correct boundary.
+    On Linux/macOS, uses the cURL backend.
+    On Windows, uses the PowerShell backend.
+
+    Performs URL and file validation before delegating to the backend.
     """
     # Validate URL
     ok, err = validate_url(url)
     if not ok:
-        return CurlResponse(status_code=0, headers={}, body="", elapsed_time=0.0, error=err)
+        return HttpResponse(status_code=0, headers={}, body="", elapsed_time=0.0, error=err)
 
     # Validate files if provided
     if files:
         ok, err = validate_files(files)
         if not ok:
-            return CurlResponse(status_code=0, headers={}, body="", elapsed_time=0.0, error=err)
+            return HttpResponse(status_code=0, headers={}, body="", elapsed_time=0.0, error=err)
 
-    # Base curl command
-    cmd = [
-        "curl",
-        "-i",
-        "-s",
-        "-X", method,
-        "-w", "\\n%{http_code}\\n%{time_total}\\n%{size_download}",
-        url,
-    ]
-
-    # File upload mode: multipart/form-data via -F
-    if files:
-        # Remove Content-Type if set — curl will set multipart boundary automatically
-        filtered_headers = {k: v for k, v in headers.items() if k.lower() != "content-type"}
-        for key, value in filtered_headers.items():
-            cmd.extend(["-H", f"{key}: {value}"])
-        # Attach each file as a form field
-        for entry in files:
-            field_name = entry.get("field", "file")
-            file_path = entry.get("path", "").strip()
-            cmd.extend(["-F", f"{field_name}=@{file_path}"])
-        # Include body as a form field named 'data' if present
-        if body:
-            cmd.extend(["-F", f"data={body}"])
-    else:
-        # Standard JSON/text request
-        for key, value in headers.items():
-            cmd.extend(["-H", f"{key}: {value}"])
-        if body:
-            cmd.extend(["-d", body])
-
-    try:
-        process = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
-        output = process.stdout.strip()
-        lines = output.splitlines()
-
-        size_download = int(lines[-1])
-        time_total = float(lines[-2])
-        status_code = int(lines[-3])
-
-        response_content = "\n".join(lines[:-3])
-
-        parts = response_content.split("\r\n\r\n", 1)
-        if len(parts) < 2:
-            parts = response_content.split("\n\n", 1)
-
-        header_text = parts[0]
-        response_body = parts[1] if len(parts) > 1 else ""
-
-        header_lines = header_text.splitlines()
-        status_line = header_lines[0] if header_lines else ""
-
-        response_headers = {}
-        for line in header_lines[1:]:
-            if ":" in line:
-                k, v = line.split(":", 1)
-                response_headers[k.strip()] = v.strip()
-
-        return CurlResponse(
-            status_code=status_code,
-            headers=response_headers,
-            body=response_body,
-            elapsed_time=time_total,
-            status_line=status_line,
-            response_size=size_download,
-        )
-
-    except subprocess.CalledProcessError as e:
-        return CurlResponse(
-            status_code=0, headers={}, body="", elapsed_time=0.0,
-            error=f"curl error: {e.stderr.strip() or 'unknown curl error'}"
-        )
-    except Exception as e:
-        return CurlResponse(
-            status_code=0, headers={}, body="", elapsed_time=0.0,
-            error=f"Unexpected error: {str(e)}"
-        )
+    # Dispatch to platform-specific backend
+    backend_execute = _get_platform_backend()
+    return backend_execute(url, method, headers, body, files)

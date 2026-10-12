@@ -18,6 +18,7 @@ Components exposed
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional, Union
 
 from rich.console import Console
 from rich.panel import Panel
@@ -30,7 +31,7 @@ from rouint import __version__
 # Shared console instance
 # ---------------------------------------------------------------------------
 
-console = Console()
+console = Console(legacy_windows=False)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -59,7 +60,7 @@ _COMMANDS: list[tuple[str, str]] = [
 # Helpers
 # ---------------------------------------------------------------------------
 
-def box_width(console: Console | None = None) -> int:
+def box_width(console: Optional[Console] = None) -> int:
     """
     Returns the current terminal width for full-width panels.
     Falls back to 80 if terminal width cannot be detected.
@@ -68,7 +69,7 @@ def box_width(console: Console | None = None) -> int:
     return c.width or 80
 
 
-def _truncate_cwd(cwd: Path | str, max_len: int = 42) -> str:
+def _truncate_cwd(cwd: Union[Path, str], max_len: int = 42) -> str:
     """Return *cwd* as a string, prefix-truncated to *max_len* characters."""
     cwd_str = str(cwd)
     if len(cwd_str) > max_len:
@@ -80,7 +81,7 @@ def _truncate_cwd(cwd: Path | str, max_len: int = 42) -> str:
 # Banner / header components
 # ---------------------------------------------------------------------------
 
-def display_header(subtitle: str | None = None) -> None:
+def display_header(subtitle: Optional[str] = None) -> None:
     """
     Print the boxed ROUINT ASCII-art header.
 

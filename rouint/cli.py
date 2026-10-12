@@ -1,5 +1,19 @@
+from __future__ import annotations
+
 import json
+import os
+import platform
 import re
+import sys
+from pathlib import Path as _Path
+from typing import Optional
+
+# On Windows consoles running legacy encodings (like cp1252), reconfigure stdout/stderr to utf-8
+if sys.platform == "win32":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 import click
 from rich.console import Console
@@ -21,7 +35,7 @@ from rouint.core.executor import execute_request, validate_url
 from rouint.ui import display_banner, display_header, box_width
 import questionary
 
-console = Console()
+console = Console(legacy_windows=False)
 
 # ---------------------------------------------------------------------------
 # Questionary custom style & pointer
@@ -49,10 +63,24 @@ def save_temp_token(token: str) -> str:
     with open(token_path, "w") as f:
         f.write(token)
     # Ensure file is only readable by owner (sensitive)
-    token_path.chmod(0o600)
+    if platform.system().lower() != "windows":
+        token_path.chmod(0o600)
+    else:
+        # On Windows, restrict file access to the current user only
+        try:
+            import subprocess as _sp
+            username = os.environ.get("USERNAME", "")
+            if username:
+                _sp.run(
+                    ["icacls", str(token_path), "/inheritance:r",
+                     "/grant:r", f"{username}:(R,W)"],
+                    capture_output=True, check=False,
+                )
+        except Exception:
+            pass  # Best-effort; Windows home dirs are usually private
     return str(token_path)
 
-def load_temp_token() -> str | None:
+def load_temp_token() -> Optional[str]:
     """Returns the saved temp token, or None if none exists."""
     token_path = get_data_path() / TEMP_TOKEN_FILE
     if not token_path.exists():
@@ -67,7 +95,7 @@ def clear_temp_token() -> bool:
         return True
     return False
 
-def extract_token_from_response(response) -> str | None:
+def extract_token_from_response(response) -> Optional[str]:
     """
     Attempts to extract a JWT or bearer token from the response.
     Checks response body (JSON fields) and Authorization / Set-Cookie headers.
