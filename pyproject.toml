@@ -1,6 +1,6 @@
 [project]
 name = "rouint"
-version = "1.0.0"
+version = "1.1.0"
 description = "CLI-Based API Endpoint Management and Testing Tool"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -39,6 +39,7 @@ Issues = "https://github.com/KavimugilRajasekar/Rouint/issues"
 dev = [
     "pytest>=8.0",
     "build>=1.0",
+    "twine>=5.0",
 ]
 
 [project.scripts]
