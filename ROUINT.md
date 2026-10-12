@@ -397,6 +397,7 @@ Rouint/
 ├── pyproject.toml
 ├── LICENSE
 ├── README.md
+├── CHANGELOG.md
 ├── ROUINT.md
 ├── rouint/
 │   ├── __init__.py         # exposes __version__
@@ -417,7 +418,13 @@ Rouint/
 
 ---
 
-## 16. Development
+## 16. Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for the full version history with commit-level detail.
+
+---
+
+## 17. Development
 
 ```bash
 git clone https://github.com/KavimugilRajasekar/Rouint.git

@@ -283,6 +283,12 @@ Rouint/
     └── test_windows.py         # Windows-specific backend tests
 ```
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for the full version history.
+
+---
+
 ## Development
 
 ### Setup
