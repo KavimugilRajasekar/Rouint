@@ -40,7 +40,15 @@ from rouint.ui import (
     is_in_launcher,
     reset_banner_state,
 )
+from prompt_toolkit.application import Application
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.keys import Keys
+from rouint.ui.controls import AlignedInquirerControl
 import questionary
+from questionary import Choice, Question
+from prompt_toolkit.formatted_text import FormattedText
+from questionary.prompts import common
+from questionary.styles import merge_styles_default
 
 console = Console(legacy_windows=False)
 
@@ -60,9 +68,74 @@ _SELECT_STYLE = questionary.Style([
 
 _POINTER = "❯"
 
-# ---------------------------------------------------------------------------
-# Token management helpers
-# ---------------------------------------------------------------------------
+def prompt_endpoint_select(
+    question_text: str,
+    choices: list[Union[Choice, Separator]],
+    style: Optional[questionary.Style] = None,
+    pointer: str = "❯",
+) -> Question:
+    """
+    Construct a Question prompt using AlignedInquirerControl to enable per-token
+    highlighting (name-only glow) on hover.
+    """
+    merged_style = merge_styles_default([style or _SELECT_STYLE])
+
+    ic = AlignedInquirerControl(
+        choices,
+        pointer=pointer,
+        use_indicator=False,
+        use_shortcuts=False,
+        show_selected=False,
+        show_description=False,
+        use_arrow_keys=True,
+    )
+
+    def get_prompt_tokens():
+        # Simple prompt for the CLI endpoint selector
+        return [
+            ("class:qmark", "?"),
+            ("class:question", f" {question_text} "),
+            ("class:instruction", "(Use arrow keys)"),
+        ]
+
+    layout = common.create_inquirer_layout(ic, get_prompt_tokens)
+
+    bindings = KeyBindings()
+
+    @bindings.add(Keys.ControlC, eager=True)
+    @bindings.add(Keys.Escape, eager=True)
+    def _(event):
+        event.app.exit(result=None)
+
+    @bindings.add(Keys.ControlM, eager=True)
+    def set_answer(event):
+        ic.is_answered = True
+        event.app.exit(result=ic.get_pointed_at().value)
+
+    @bindings.add(Keys.Down, eager=True)
+    def move_down(event):
+        ic.select_next()
+        while not ic.is_selection_valid():
+            ic.select_next()
+
+    @bindings.add(Keys.Up, eager=True)
+    def move_up(event):
+        ic.select_previous()
+        while not ic.is_selection_valid():
+            ic.select_previous()
+
+    bindings.add(Keys.Down, eager=True)(move_down)
+    bindings.add(Keys.Up, eager=True)(move_up)
+    bindings.add("j", eager=True)(move_down)
+    bindings.add("k", eager=True)(move_up)
+
+    return Question(
+        Application(
+            layout=layout,
+            key_bindings=bindings,
+            style=merged_style,
+        )
+    )
 
 def save_temp_token(token: str) -> str:
     """Persists a token to .rouint-data/.temp_token for reuse within the workspace."""
@@ -155,14 +228,38 @@ def select_endpoint():
         return None
 
     max_name_len = max(len(ep['name']) for ep in endpoints)
-    choices = [f"{ep['name'].ljust(max_name_len)}  [{ep['method']}]" for ep in endpoints]
-    choices.append("— Exit —")
-    selected_label = questionary.select("Select an endpoint (or press Esc to exit):", choices=choices, style=_SELECT_STYLE, pointer=_POINTER, instruction="").ask()
+    # [DELETE] is the longest method badge (8 chars); pad all badges to that width
+    max_badge_len = max(len(f"[{ep['method']}]") for ep in endpoints)
 
-    if not selected_label or selected_label == "— Exit —":
+    def _make_title(ep: dict) -> FormattedText:
+        name_col  = ep['name'].ljust(max_name_len) + "  "
+        badge_col = ("[" + ep["method"] + "]").ljust(max_badge_len) + "  "
+        path_col  = ep.get("path", "")
+        return FormattedText([
+            ("", name_col),
+            ("", badge_col),
+            ("fg:#666666", path_col),
+        ])
+
+    choices = [
+        questionary.Choice(title=_make_title(ep), value=ep['name'])
+        for ep in endpoints
+    ]
+    choices.append(questionary.Choice(title="— Exit —", value="— Exit —"))
+
+    q = prompt_endpoint_select(
+        "Select an endpoint (or press Esc to exit):",
+        choices=choices,
+        style=_SELECT_STYLE,
+        pointer=_POINTER,
+    )
+    selected_name = q.ask()
+
+    if not selected_name or selected_name == "— Exit —":
         return None
 
-    return next(ep for ep in endpoints if ep['name'] == selected_label.split("  [")[0].strip())
+    return next(ep for ep in endpoints if ep['name'] == selected_name)
+
 
 def handle_endpoint_creation(existing_ep=None):
     """Shared logic for creating and editing endpoints.

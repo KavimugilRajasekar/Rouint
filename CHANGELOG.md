@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [1.1.2] — 2026-10-13
+
+### Changed
+
+- **Endpoint selector — path preview in grey** — the `Select an endpoint` prompt now displays the configured path alongside each entry in dark grey (`\x1b[90m`). Name, method badge, and path are rendered in three perfectly aligned columns: names are padded to the longest name, method badges are padded to the longest badge (`[DELETE]`), and all paths start at the same column. This makes it easy to distinguish endpoints with the same name or method at a glance without opening their configuration.
+
+---
+
 ## [1.1.1] — 2026-10-12
 
 ### Added
