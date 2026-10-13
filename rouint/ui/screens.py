@@ -177,21 +177,21 @@ def get_menu_items(state: Optional[WorkspaceState] = None) -> list[MenuItem]:
     if not state.is_initialized:
         items.append(MenuItem(
             name="add-base-url",
-            description="Add base URLs",
+            description="Manage base URLs",
             hint="run 'init' first",
             enabled=False,
         ))
     elif not state.has_base_urls:
         items.append(MenuItem(
             name="add-base-url",
-            description="Add base URLs",
+            description="Manage base URLs",
             hint="required — no URLs configured yet",
             enabled=True,
         ))
     else:
         items.append(MenuItem(
             name="add-base-url",
-            description="Add base URLs",
+            description="Manage base URLs",
             hint=None,
             enabled=True,
         ))
@@ -296,7 +296,7 @@ def get_menu_items(state: Optional[WorkspaceState] = None) -> list[MenuItem]:
 
     # 8. Exit: Always available to close the interactive menu cleanly.
     items.append(MenuItem(
-        name="Exit",
+        name="— Exit —",
         description="",
         hint=None,
         enabled=True,
@@ -355,59 +355,17 @@ def format_menu_line(
 # Aligned Questionary InquirerControl
 # ---------------------------------------------------------------------------
 
-class AlignedInquirerControl(InquirerControl):
-    """
-    Custom InquirerControl that preserves strict vertical alignment across
-    enabled and disabled choices by omitting Questionary's default '- ' prefix.
-    """
-
-    def _get_choice_tokens(self):
-        tokens = []
-
-        def append(index: int, choice: Choice):
-            selected = choice.value in self.selected_options
-
-            if index == self.pointed_at:
-                if self.pointer is not None:
-                    tokens.append(("class:pointer", f" {self.pointer} "))
-                else:
-                    tokens.append(("class:text", " " * 3))
-                tokens.append(("[SetCursorPosition]", ""))
-            else:
-                pointer_length = len(self.pointer) if self.pointer is not None else 1
-                tokens.append(("class:text", " " * (2 + pointer_length)))
-
-            if isinstance(choice, Separator):
-                tokens.append(("class:separator", f"{choice.title}"))
-            elif choice.disabled:
-                # Disabled choice: preserve alignment, do not prepend '- '
-                if isinstance(choice.title, list):
-                    tokens.extend(choice.title)
-                else:
-                    tokens.append(("class:disabled", str(choice.title)))
-            else:
-                if isinstance(choice.title, list):
-                    tokens.extend(choice.title)
-                elif selected:
-                    tokens.append(("class:selected", str(choice.title)))
-                elif index == self.pointed_at:
-                    tokens.append(("class:highlighted", str(choice.title)))
-                else:
-                    tokens.append(("class:text", str(choice.title)))
-
-            tokens.append(("", "\n"))
-
-        for i, c in enumerate(self.filtered_choices):
-            append(i, c)
-
-        if tokens:
-            tokens.pop()  # Remove trailing newline
-
-        return tokens
+from rouint.ui.controls import AlignedInquirerControl
 
 
 def build_questionary_choices(menu_items: list[MenuItem]) -> list[Union[Choice, Separator]]:
-    """Convert MenuItems to questionary Choice and Separator instances."""
+    """Convert MenuItems to questionary Choice and Separator instances.
+
+    Each non-exit choice title is a structured FormattedText where the first
+    token is the command name (highlighted on hover) and the remaining tokens
+    are the description + hint (never highlighted, grey hint preserved).
+    """
+    from prompt_toolkit.formatted_text import FormattedText as FT
     choices: list[Union[Choice, Separator]] = []
     for item in menu_items:
         if item.is_exit:
@@ -416,16 +374,30 @@ def build_questionary_choices(menu_items: list[MenuItem]) -> list[Union[Choice, 
                 value="exit",
             ))
         else:
-            line_str = format_menu_line(
-                name=item.name,
-                desc=item.description,
-                hint=item.hint,
-                is_exit=False,
-                use_ansi=True,
-            )
-            title_tokens = to_formatted_text(ANSI(line_str))
+            cmd_col = f"{item.name:<{CMD_WIDTH}}"
+            sep = "—  "
+
+            desc = item.description
+            if len(desc) > DESC_WIDTH:
+                desc = desc[:DESC_WIDTH - 3] + "..."
+            desc_col = f"{desc:<{DESC_WIDTH}}"
+
+            # Two-part title: [name_token, ...rest_tokens]
+            # Only name_token gets class:highlighted on hover; rest keeps its style.
+            if item.hint:
+                tokens = FT([
+                    ("", cmd_col),
+                    ("", sep + desc_col),
+                    ("fg:#666666", f"({item.hint})"),
+                ])
+            else:
+                tokens = FT([
+                    ("", cmd_col),
+                    ("", (sep + desc_col).rstrip()),
+                ])
+
             choices.append(Choice(
-                title=title_tokens,
+                title=tokens,
                 value=item.name,
                 disabled=not item.enabled,
             ))
@@ -621,6 +593,8 @@ def _show_help_inline(ctx: click.Context) -> None:
         subtitle="[dim]rouint <command> --help  for per-command options[/dim]",
         border_style="bright_black",
         padding=(1, 2),
+        title_align="center",
+        subtitle_align="cneter",
     ))
     console.print()
 

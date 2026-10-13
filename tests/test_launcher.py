@@ -94,7 +94,7 @@ def test_fresh_workspace_state_and_menu(clean_workspace):
     assert item_map["clear-token"].enabled is False
     assert item_map["clear-token"].hint == "no token saved"
 
-    assert item_map["Exit"].enabled is True
+    assert item_map["— Exit —"].enabled is True
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +266,7 @@ def test_column_alignment_consistent_across_all_states(clean_workspace):
         items = get_menu_items(st)
         for item in items:
             if item.is_exit:
-                assert item.name == "Exit"
+                assert item.name == "— Exit —"
                 continue
             line = format_menu_line(item.name, item.description, item.hint, is_exit=False, use_ansi=False)
             # Em dash position must be exactly index CMD_WIDTH (16)
