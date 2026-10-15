@@ -1,0 +1,40 @@
+name: Sync Wiki
+
+# Runs on every push to main that touches the wiki/ folder.
+# Clones the GitHub Wiki repo, copies all .md files from wiki/,
+# and pushes the result — keeping the Wiki tab always up to date.
+
+on:
+  push:
+    paths:
+      - "wiki/**"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # needed to push to the wiki repo
+
+    steps:
+      - name: Checkout main repo
+        uses: actions/checkout@v4
+
+      - name: Clone wiki repo
+        run: |
+          git clone "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git" wiki-repo
+
+      - name: Copy wiki pages
+        run: |
+          cp wiki/*.md wiki-repo/
+
+      - name: Commit and push
+        run: |
+          cd wiki-repo
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          # Only commit if there are actual changes
+          git diff --cached --quiet && echo "No wiki changes." || \
+            git commit -m "docs(wiki): sync from main branch [skip ci]"
+          git push
