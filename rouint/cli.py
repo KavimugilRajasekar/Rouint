@@ -4,6 +4,7 @@ import json
 import os
 import platform
 import re
+from rouint import __version__
 import sys
 from pathlib import Path as _Path
 from typing import Optional
@@ -491,6 +492,7 @@ def handle_endpoint_creation(existing_ep=None):
 
 
 @click.group(invoke_without_command=True)
+@click.version_option(version=__version__, prog_name="Rouint")
 @click.pass_context
 def cli(ctx):
     """Rouint — cURL-powered API endpoint management & testing tool.
@@ -1261,9 +1263,3 @@ def clear_token():
         console.print("[green]✓ Temp token cleared successfully.[/green]")
     else:
         console.print("[yellow]No temp token found to clear.[/yellow]")
-
-@cli.command(name="version")
-def version():
-    """Print the current Rouint version and exit."""
-    from rouint import __version__
-    console.print(f"[bold cyan]Rouint[/bold cyan] v[bold]{__version__}[/bold]")
