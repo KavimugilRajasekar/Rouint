@@ -615,6 +615,13 @@ def interactive_launcher(ctx: click.Context) -> None:
             if _loop_guard > 100:  # Safety guard for automated tests
                 break
 
+            # Re-print the subtitle header before every menu so the context
+            # line "◆  Command Launcher  (Press Esc to exit anytime)" always
+            # appears directly above the prompt, even after returning from a
+            # subcommand.
+            if _loop_guard > 1:
+                display_header("Command Launcher")
+
             state = get_workspace_state()
             items = get_menu_items(state)
             enabled_map = {item.name: item.enabled for item in items}
