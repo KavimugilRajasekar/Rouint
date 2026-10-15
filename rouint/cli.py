@@ -1032,6 +1032,41 @@ def build_powershell_wrapper(ep: dict, base_url: str = "<base_url>") -> str:
     return "\n".join(lines)
 
 
+def _copy_to_clipboard(text: str) -> bool:
+    """
+    Copy text to the system clipboard using native tools.
+    Returns True on success, False if no clipboard tool is available.
+
+    Platform tools tried (in order):
+      Linux   — xclip, xsel, wl-copy (Wayland)
+      macOS   — pbcopy
+      Windows — clip.exe (built-in)
+    """
+    import subprocess as _sp
+    system = platform.system().lower()
+
+    try:
+        if system == "darwin":
+            _sp.run(["pbcopy"], input=text.encode(), check=True)
+            return True
+        elif system == "windows":
+            _sp.run(["clip"], input=text.encode("utf-16-le"), check=True)
+            return True
+        else:
+            # Linux / other Unix — try in order of preference
+            for cmd in (
+                ["xclip", "-selection", "clipboard"],
+                ["xsel", "--clipboard", "--input"],
+                ["wl-copy"],
+            ):
+                if _sp.run(["which", cmd[0]], capture_output=True).returncode == 0:
+                    _sp.run(cmd, input=text.encode(), check=True)
+                    return True
+    except Exception:
+        pass
+    return False
+
+
 def _render_wrapper_panel(ep: dict) -> None:
     """
     Detect the current platform, build the matching wrapper command, and
@@ -1165,6 +1200,7 @@ def _render_wrapper_panel(ep: dict) -> None:
 
     content = RichGroup(*styled_lines)
 
+    console.print()
     console.print(Panel(
         content,
         title=f"[bold {title_color}]WRAPPER COMMAND  ({lang_label})[/bold {title_color}]",
@@ -1172,6 +1208,12 @@ def _render_wrapper_panel(ep: dict) -> None:
         border_style=border,
         expand=True,
     ))
+
+    # Auto-copy the raw command to the system clipboard
+    if _copy_to_clipboard(wrapper):
+        console.print("[dim]✓ Copied to clipboard.[/dim]")
+    else:
+        console.print("[dim]⚠  Clipboard unavailable — copy manually from above.[/dim]")
 
 
 @cli.command(name="list-api")
