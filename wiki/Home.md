@@ -1,4 +1,4 @@
-# Rouint Wiki
+# Rouint - Wiki
 
 > **CLI-Based API Endpoint Management & Testing Tool**  
 > Define endpoints once. Test them anywhere. No GUI required.
