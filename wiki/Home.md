@@ -95,7 +95,7 @@ rouint clear-token     ← remove saved Bearer token
 
 ## Current Version
 
-**v1.1.3** — Command Launcher header re-displayed on menu re-entry  
+**v1.1.3** — Wrapper view (`--show-wrapper`), `--version` flag, auto clipboard copy, launcher improvements  
 Released: 2026-10-15
 
 See the full [Changelog](Changelog.md) for version history.

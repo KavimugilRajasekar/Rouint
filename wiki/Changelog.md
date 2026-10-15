@@ -10,9 +10,19 @@ All notable changes to Rouint are documented here. The format follows [Keep a Ch
 
 ## [1.1.3] — 2026-10-15
 
+### Added
+
+- **`rouint list-api --show-wrapper`** — displays the exact native HTTP command for any saved endpoint. On Linux/macOS: a syntax-coloured `curl` command. On Windows: the equivalent `Invoke-WebRequest` PowerShell block. Rendered in a `WRAPPER COMMAND` panel using Rouint theme colours (yellow border on Linux/macOS, magenta on Windows) with no dark background. Also accessible as a **Show Wrapper** action inside the standard `list-api` menu.
+- **Base URL embed prompt** — if any environments are saved, the wrapper view asks to embed a real base URL into the command. Selecting a placeholder keeps `<base_url>`.
+- **Auto-copy to clipboard** — the raw command is copied to the system clipboard automatically after the panel is printed. Uses native tools: `xclip` / `xsel` / `wl-copy` on Linux, `pbcopy` on macOS, `clip.exe` on Windows. Prints `✓ Copied to clipboard.` on success. Zero new dependencies.
+- **`--show-wrapper` promoted in launcher** — `list-api` menu item shows grey hint `(--show-wrapper available)`. Selecting `list-api` from the launcher shows a mode prompt (*Manage endpoints / View wrapper command*) mirroring `start-test`'s pattern. Help panel shows `[--show-wrapper]` in yellow.
+- **`rouint --version`** — version flag on the CLI group via Click's `version_option`. Shown as a separated `--version` row at the bottom of the inline help panel.
+- **Choice alignment** — parenthesised hints in mode prompts column-aligned: `(` at column 15 for test mode, column 21 for list mode.
+
 ### Fixed
 
-- **Command Launcher header on menu re-entry** — after returning from a subcommand, the `◆  Command Launcher  (Press Esc to exit anytime)` subtitle was missing, causing the menu prompt to appear without context. The subtitle block is now re-printed before every menu loop iteration after the first; the ASCII art banner remains suppressed (shown once per session only).
+- **Command Launcher header on menu re-entry** — `◆  Command Launcher` subtitle re-printed before every menu loop iteration after the first; ASCII art banner stays suppressed.
+- **Help panel `subtitle_align` typo** — `"cneter"` → `"center"`.
 
 ---
 
@@ -97,7 +107,7 @@ All notable changes to Rouint are documented here. The format follows [Keep a Ch
 
 | Version | Date | Headline |
 |---------|------|---------|
-| 1.1.3 | 2026-10-15 | Command Launcher header re-displayed on menu re-entry |
+| 1.1.3 | 2026-10-15 | Wrapper view, --version flag, clipboard copy, launcher improvements |
 | 1.1.2 | 2026-10-13 | Aligned path previews in endpoint selector |
 | 1.1.1 | 2026-10-12 | Interactive TUI launcher, Windows hidden folder |
 | 1.1.0 | 2026-10-12 | Windows backend, CI matrix, PyPI Trusted Publishing |

@@ -6,7 +6,7 @@
 
 ## Overview
 
-Rouint exposes six commands. You can also launch an interactive menu by running `rouint` with no arguments.
+Rouint exposes six commands plus `--version`. You can also launch an interactive menu by running `rouint` with no arguments.
 
 | Command | One-line description |
 |---------|---------------------|
@@ -14,8 +14,9 @@ Rouint exposes six commands. You can also launch an interactive menu by running 
 | [`rouint add-base-url`](#rouint-add-base-url) | Add or delete a named base URL environment |
 | [`rouint add-new-api`](#rouint-add-new-api) | Define a new API endpoint interactively |
 | [`rouint start-test`](#rouint-start-test) | Select an endpoint and run an HTTP test |
-| [`rouint list-api`](#rouint-list-api) | Browse, inspect, edit, or delete saved endpoints |
+| [`rouint list-api`](#rouint-list-api) | Browse, inspect, edit, delete, or view wrapper for saved endpoints |
 | [`rouint clear-token`](#rouint-clear-token) | Remove the saved temporary Bearer token |
+| [`rouint --version`](#rouint---version) | Print the current Rouint version |
 
 ---
 

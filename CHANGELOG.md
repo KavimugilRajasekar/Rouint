@@ -8,9 +8,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ## [1.1.3] — 2026-10-15
 
+### Added
+
+- **`rouint list-api --show-wrapper`** — new flag that displays the exact native HTTP command Rouint would execute for any saved endpoint. On Linux/macOS shows a syntax-coloured `curl` command; on Windows shows the equivalent `Invoke-WebRequest` PowerShell block. Rendered in a `WRAPPER COMMAND  (curl  ·  Linux / macOS)` / `WRAPPER COMMAND  (PowerShell  ·  Windows)` panel using Rouint theme colours (no dark background). Also accessible interactively via the new **Show Wrapper** action inside `rouint list-api`.
+- **Base URL embed prompt** — when showing the wrapper, if any environments are saved Rouint asks *"Embed a base URL? (optional):"* so the displayed command contains the real URL instead of `<base_url>`. Choosing the placeholder option keeps `<base_url>` as-is.
+- **Auto-copy to clipboard** — immediately after the wrapper panel is printed, the raw command is copied to the system clipboard automatically. Uses `xclip`, `xsel`, or `wl-copy` on Linux; `pbcopy` on macOS; `clip.exe` on Windows. Prints `✓ Copied to clipboard.` on success, or a graceful fallback message if no clipboard tool is found. Zero new dependencies.
+- **`--show-wrapper` promoted in the launcher** — `list-api` menu item now shows the grey hint `(--show-wrapper available)`. Selecting `list-api` from the interactive launcher shows a mode-selection prompt (*Manage endpoints / View wrapper command*) identical in style to `start-test`'s *Standard test / Skip metrics* prompt. The help panel shows `[--show-wrapper]` in yellow alongside `list-api`.
+- **`rouint --version`** — version flag added to the CLI group via Click's `version_option`, printing `Rouint, version 1.1.3`. Shown as a visually separated `--version` row (blank line gap) at the bottom of the inline help panel.
+- **Choice alignment** — parenthesised hints in mode-selection prompts are now column-aligned: `Standard test  (with metrics)` / `Skip metrics   (--no-metrics)` both open `(` at column 15; `Manage endpoints     (standard)` / `View wrapper command (--show-wrapper)` both open `(` at column 21.
+
 ### Fixed
 
-- **Command Launcher header on menu re-entry** — after returning from a subcommand (e.g. `start-test`, `add-new-api`), the `◆  Command Launcher  (Press Esc to exit anytime)` subtitle was missing, causing the `? What would you like to do?` prompt to appear with no context header. The subtitle block is now re-printed at the start of every loop iteration after the first, while the ASCII art banner remains suppressed (shown once per session only).
+- **Command Launcher header on menu re-entry** — after returning from a subcommand, the `◆  Command Launcher  (Press Esc to exit anytime)` subtitle was missing, causing the `? What would you like to do?` prompt to appear with no context. The subtitle block is now re-printed before every menu loop iteration after the first; the ASCII art banner remains suppressed (shown once per session only).
+- **Help panel `subtitle_align` typo** — corrected `"cneter"` → `"center"`.
 
 ---
 
@@ -94,7 +104,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
-[1.1.2]: https://github.com/KavimugilRajasekar/Rouint/compare/v1.1.1...v1.1.2
-[1.1.1]: https://github.com/KavimugilRajasekar/Rouint/compare/v1.1.0...v1.1.1
-[1.1.0]: https://github.com/KavimugilRajasekar/Rouint/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/KavimugilRajasekar/Rouint/releases/tag/v1.0.0
+[1.1.3 vs 1.1.2](https://github.com/KavimugilRajasekar/Rouint/compare/v1.1.2...v1.1.3)
+[1.1.2 vs 1.1.1](https://github.com/KavimugilRajasekar/Rouint/compare/v1.1.1...v1.1.2)
+[1.1.1 vs 1.1.0](https://github.com/KavimugilRajasekar/Rouint/compare/v1.1.0...v1.1.1)
+[1.1.0 vs 1.0.0](https://github.com/KavimugilRajasekar/Rouint/compare/v1.0.0...v1.1.0)
+[1.0.0 release](https://github.com/KavimugilRajasekar/Rouint/releases/tag/v1.0.0)
