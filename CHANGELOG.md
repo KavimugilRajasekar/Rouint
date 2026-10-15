@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [1.1.3] — 2026-10-15
+
+### Fixed
+
+- **Command Launcher header on menu re-entry** — after returning from a subcommand (e.g. `start-test`, `add-new-api`), the `◆  Command Launcher  (Press Esc to exit anytime)` subtitle was missing, causing the `? What would you like to do?` prompt to appear with no context header. The subtitle block is now re-printed at the start of every loop iteration after the first, while the ASCII art banner remains suppressed (shown once per session only).
+
+---
+
 ## [1.1.2] — 2026-10-13
 
 ### Changed
@@ -86,6 +94,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+[1.1.2]: https://github.com/KavimugilRajasekar/Rouint/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/KavimugilRajasekar/Rouint/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/KavimugilRajasekar/Rouint/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/KavimugilRajasekar/Rouint/releases/tag/v1.0.0

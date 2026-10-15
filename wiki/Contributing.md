@@ -149,8 +149,8 @@ This produces:
 
 ```
 dist/
-├── rouint-1.1.2.tar.gz       ← source distribution
-└── rouint-1.1.2-py3-none-any.whl  ← wheel
+├── rouint-1.1.3.tar.gz       ← source distribution
+└── rouint-1.1.3-py3-none-any.whl  ← wheel
 ```
 
 Validate before publishing:

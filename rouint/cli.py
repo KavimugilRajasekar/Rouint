@@ -977,3 +977,9 @@ def clear_token():
         console.print("[green]✓ Temp token cleared successfully.[/green]")
     else:
         console.print("[yellow]No temp token found to clear.[/yellow]")
+
+@cli.command(name="version")
+def version():
+    """Print the current Rouint version and exit."""
+    from rouint import __version__
+    console.print(f"[bold cyan]Rouint[/bold cyan] v[bold]{__version__}[/bold]")

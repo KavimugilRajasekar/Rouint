@@ -95,8 +95,8 @@ rouint clear-token     ← remove saved Bearer token
 
 ## Current Version
 
-**v1.1.2** — Aligned path previews in endpoint selector  
-Released: 2026-10-13
+**v1.1.3** — Command Launcher header re-displayed on menu re-entry  
+Released: 2026-10-15
 
 See the full [Changelog](Changelog.md) for version history.
 

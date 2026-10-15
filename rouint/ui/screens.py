@@ -580,6 +580,7 @@ def _show_help_inline(ctx: click.Context) -> None:
         ("start-test",             "[--no-metrics]","Run a test against a saved endpoint"),
         ("list-api",               "",              "List, inspect, edit, or delete saved endpoints"),
         ("clear-token",            "",              "Clear the saved temporary Bearer token"),
+        ("version",                "",              "Print the current Rouint version and exit"),
     ]
 
     for cmd, flag, desc in commands:

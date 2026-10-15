@@ -8,6 +8,14 @@ All notable changes to Rouint are documented here. The format follows [Keep a Ch
 
 ---
 
+## [1.1.3] — 2026-10-15
+
+### Fixed
+
+- **Command Launcher header on menu re-entry** — after returning from a subcommand, the `◆  Command Launcher  (Press Esc to exit anytime)` subtitle was missing, causing the menu prompt to appear without context. The subtitle block is now re-printed before every menu loop iteration after the first; the ASCII art banner remains suppressed (shown once per session only).
+
+---
+
 ## [1.1.2] — 2026-10-13
 
 ### Changed
@@ -89,6 +97,7 @@ All notable changes to Rouint are documented here. The format follows [Keep a Ch
 
 | Version | Date | Headline |
 |---------|------|---------|
+| 1.1.3 | 2026-10-15 | Command Launcher header re-displayed on menu re-entry |
 | 1.1.2 | 2026-10-13 | Aligned path previews in endpoint selector |
 | 1.1.1 | 2026-10-12 | Interactive TUI launcher, Windows hidden folder |
 | 1.1.0 | 2026-10-12 | Windows backend, CI matrix, PyPI Trusted Publishing |
@@ -98,6 +107,7 @@ All notable changes to Rouint are documented here. The format follows [Keep a Ch
 
 Full diff links:
 
+- [1.1.3 vs 1.1.2](https://github.com/KavimugilRajasekar/Rouint/compare/v1.1.2...v1.1.3)
 - [1.1.2 vs 1.1.1](https://github.com/KavimugilRajasekar/Rouint/compare/v1.1.1...v1.1.2)
 - [1.1.1 vs 1.1.0](https://github.com/KavimugilRajasekar/Rouint/compare/v1.1.0...v1.1.1)
 - [1.1.0 vs 1.0.0](https://github.com/KavimugilRajasekar/Rouint/compare/v1.0.0...v1.1.0)
