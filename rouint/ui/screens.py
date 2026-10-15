@@ -265,7 +265,7 @@ def get_menu_items(state: Optional[WorkspaceState] = None) -> list[MenuItem]:
         items.append(MenuItem(
             name="list-api",
             description="Manage saved endpoints",
-            hint=None,
+            hint="--show-wrapper available",
             enabled=True,
         ))
 
@@ -574,17 +574,25 @@ def _show_help_inline(ctx: click.Context) -> None:
     table.add_column()
 
     commands = [
-        ("init",                   "",              "Initialize Rouint workspace in the current directory"),
-        ("add-base-url",           "",              "Add or delete a named base URL (local, staging, production…)"),
-        ("add-new-api",            "",              "Define a new API endpoint interactively"),
-        ("start-test",             "[--no-metrics]","Run a test against a saved endpoint"),
-        ("list-api",               "",              "List, inspect, edit, or delete saved endpoints"),
-        ("clear-token",            "",              "Clear the saved temporary Bearer token"),
+        ("init",         "",                  "Initialize Rouint workspace in the current directory"),
+        ("add-base-url", "",                  "Add or delete a named base URL (local, staging, production…)"),
+        ("add-new-api",  "",                  "Define a new API endpoint interactively"),
+        ("start-test",   "[--no-metrics]",    "Run a test against a saved endpoint"),
+        ("list-api",     "[--show-wrapper]",  "List, inspect, edit, or delete saved endpoints"),
+        ("clear-token",  "",                  "Clear the saved temporary Bearer token"),
     ]
 
     for cmd, flag, desc in commands:
         flag_text = Text(flag, style="yellow") if flag else Text("")
         table.add_row(cmd, flag_text, desc)
+
+    # Separator + --version flag entry
+    table.add_row(Text(""), Text(""), Text(""))
+    table.add_row(
+        Text("--version", style="bold cyan"),
+        Text(""),
+        Text("Print the current Rouint version and exit"),
+    )
 
     console.print()
     console.print(Panel(
@@ -594,7 +602,7 @@ def _show_help_inline(ctx: click.Context) -> None:
         border_style="bright_black",
         padding=(1, 2),
         title_align="center",
-        subtitle_align="cneter",
+        subtitle_align="center",
     ))
     console.print()
 
@@ -614,6 +622,13 @@ def interactive_launcher(ctx: click.Context) -> None:
             _loop_guard += 1
             if _loop_guard > 100:  # Safety guard for automated tests
                 break
+
+            # Re-print the subtitle header before every menu so the context
+            # line "◆  Command Launcher  (Press Esc to exit anytime)" always
+            # appears directly above the prompt, even after returning from a
+            # subcommand.
+            if _loop_guard > 1:
+                display_header("Command Launcher")
 
             state = get_workspace_state()
             items = get_menu_items(state)
@@ -641,8 +656,8 @@ def interactive_launcher(ctx: click.Context) -> None:
                 mode = questionary.select(
                     "Select test mode:",
                     choices=[
-                        Choice("Standard test (with metrics)", value=False),
-                        Choice("Skip metrics (--no-metrics)", value=True),
+                        Choice("Standard test  (with metrics)", value=False),
+                        Choice("Skip metrics   (--no-metrics)", value=True),
                     ],
                     style=LAUNCHER_STYLE,
                     pointer="❯",
@@ -655,6 +670,27 @@ def interactive_launcher(ctx: click.Context) -> None:
                 cmd = ctx.command.get_command(ctx, "start-test")
                 if cmd is not None:
                     ctx.invoke(cmd, no_metrics=mode)
+                console.print()
+                continue
+
+            # ── list-api: offer --show-wrapper mode selection ─────────────────
+            if selected == "list-api":
+                mode = questionary.select(
+                    "Select list mode:",
+                    choices=[
+                        Choice("Manage endpoints     (standard)",       value=False),
+                        Choice("View wrapper command (--show-wrapper)",  value=True),
+                    ],
+                    style=LAUNCHER_STYLE,
+                    pointer="❯",
+                    instruction="",
+                ).ask()
+                if mode is None:
+                    console.print()
+                    continue
+                cmd = ctx.command.get_command(ctx, "list-api")
+                if cmd is not None:
+                    ctx.invoke(cmd, show_wrapper=mode)
                 console.print()
                 continue
 

@@ -4,6 +4,7 @@ import json
 import os
 import platform
 import re
+from rouint import __version__
 import sys
 from pathlib import Path as _Path
 from typing import Optional
@@ -491,6 +492,7 @@ def handle_endpoint_creation(existing_ep=None):
 
 
 @click.group(invoke_without_command=True)
+@click.version_option(version=__version__, prog_name="Rouint")
 @click.pass_context
 def cli(ctx):
     """Rouint — cURL-powered API endpoint management & testing tool.
@@ -909,8 +911,319 @@ def start_test(no_metrics):
             console.print("[dim]If this persists, report it at https://github.com/KavimugilRajasekar/Rouint/issues[/dim]")
             return
 
+# ---------------------------------------------------------------------------
+# Wrapper builders (for --show-wrapper)
+# ---------------------------------------------------------------------------
+
+def build_curl_wrapper(ep: dict, base_url: str = "<base_url>") -> str:
+    """
+    Reconstruct the curl command that Rouint would run for a given endpoint.
+    Uses a placeholder base URL when none is supplied.
+    Mirrors the logic in rouint/platforms/linux/executor.py exactly.
+    """
+    method  = ep.get("method", "GET")
+    path    = ep.get("path", "/")
+    headers = dict(ep.get("headers") or {})
+    body    = ep.get("body")
+    files   = list(ep.get("files") or [])
+    auth    = ep.get("auth") or {}
+
+    # Inject auth header preview
+    auth_type = auth.get("type", "none")
+    if auth_type in ("bearer token", "bearer"):
+        headers["Authorization"] = "Bearer <token>"
+    elif auth_type == "custom":
+        h = auth.get("header", "Authorization")
+        headers[h] = auth.get("value", "<value>")
+
+    url = f"{base_url.rstrip('/')}{path}"
+
+    # Build as a list of token-pairs / single tokens (each becomes one line)
+    segments = [
+        "curl",
+        "-i -s",
+        f"-X {method}",
+        f'-w "\\n%{{http_code}}\\n%{{time_total}}\\n%{{size_download}}"',
+        f'"{url}"',
+    ]
+
+    if files:
+        filtered = {k: v for k, v in headers.items() if k.lower() != "content-type"}
+        for k, v in filtered.items():
+            segments.append(f'-H "{k}: {v}"')
+        for entry in files:
+            field = entry.get("field", "file")
+            fpath = entry.get("path", "<path>")
+            segments.append(f'-F "{field}=@{fpath}"')
+        if body:
+            segments.append(f'-F "data={body}"')
+    else:
+        for k, v in headers.items():
+            segments.append(f'-H "{k}: {v}"')
+        if body:
+            segments.append(f"-d '{body}'")
+
+    # First segment on its own line, rest indented with backslash continuation
+    lines = [segments[0]]
+    for seg in segments[1:]:
+        lines.append(f"  {seg}")
+    return " \\\n".join(lines)
+
+
+def build_powershell_wrapper(ep: dict, base_url: str = "<base_url>") -> str:
+    """
+    Reconstruct the key PowerShell Invoke-WebRequest call that Rouint would
+    run for a given endpoint.
+    Mirrors the logic in rouint/platforms/windows/executor.py exactly.
+    """
+    method  = ep.get("method", "GET")
+    path    = ep.get("path", "/")
+    headers = dict(ep.get("headers") or {})
+    body    = ep.get("body")
+    files   = list(ep.get("files") or [])
+    auth    = ep.get("auth") or {}
+
+    # Inject auth header preview
+    auth_type = auth.get("type", "none")
+    if auth_type in ("bearer token", "bearer"):
+        headers["Authorization"] = "Bearer <token>"
+    elif auth_type == "custom":
+        h = auth.get("header", "Authorization")
+        headers[h] = auth.get("value", "<value>")
+
+    url = f"{base_url.rstrip('/')}{path}"
+
+    lines = []
+    lines.append("$headers = @{")
+    effective_headers = {k: v for k, v in headers.items()
+                         if not (files and k.lower() == "content-type")}
+    for k, v in effective_headers.items():
+        lines.append(f"    '{k}' = '{v}'")
+    lines.append("}")
+    lines.append("")
+
+    lines.append("$params = @{")
+    lines.append(f"    Uri     = '{url}'")
+    lines.append(f"    Method  = '{method}'")
+    lines.append( "    Headers = $headers")
+    lines.append( "    UseBasicParsing = $true")
+    lines.append( "    SkipHttpErrorCheck = $true   # PS 7+ only")
+    lines.append("}")
+    lines.append("")
+
+    if files:
+        lines.append("# PS 7+: native -Form file upload")
+        lines.append("$form = @{")
+        for entry in files:
+            field = entry.get("field", "file")
+            fpath = entry.get("path", "<path>")
+            lines.append(f"    '{field}' = Get-Item -LiteralPath '{fpath}'")
+        if body:
+            lines.append(f"    'data' = '{body}'")
+        lines.append("}")
+        lines.append("$params['Form'] = $form")
+        lines.append("")
+    elif body:
+        lines.append(f"$params['Body'] = [System.Text.Encoding]::UTF8.GetBytes('{body}')")
+        lines.append("")
+
+    lines.append("$response = Invoke-WebRequest @params")
+
+    return "\n".join(lines)
+
+
+def _copy_to_clipboard(text: str) -> bool:
+    """
+    Copy text to the system clipboard using native tools.
+    Returns True on success, False if no clipboard tool is available.
+
+    Platform tools tried (in order):
+      Linux   — xclip, xsel, wl-copy (Wayland)
+      macOS   — pbcopy
+      Windows — clip.exe (built-in)
+    """
+    import subprocess as _sp
+    system = platform.system().lower()
+
+    try:
+        if system == "darwin":
+            _sp.run(["pbcopy"], input=text.encode(), check=True)
+            return True
+        elif system == "windows":
+            _sp.run(["clip"], input=text.encode("utf-16-le"), check=True)
+            return True
+        else:
+            # Linux / other Unix — try in order of preference
+            for cmd in (
+                ["xclip", "-selection", "clipboard"],
+                ["xsel", "--clipboard", "--input"],
+                ["wl-copy"],
+            ):
+                if _sp.run(["which", cmd[0]], capture_output=True).returncode == 0:
+                    _sp.run(cmd, input=text.encode(), check=True)
+                    return True
+    except Exception:
+        pass
+    return False
+
+
+def _render_wrapper_panel(ep: dict) -> None:
+    """
+    Detect the current platform, build the matching wrapper command, and
+    print it inside a styled panel using Rouint theme colours (no dark background).
+    Offers to embed a real base URL if any environments are saved.
+    """
+    is_windows = platform.system().lower() == "windows"
+
+    # ── Optionally embed a real base URL ─────────────────────────────────
+    base_url = "<base_url>"
+    try:
+        envs = list_environments()
+        if envs:
+            env_choices = [f"{e['name']}  →  {e['base_url']}" for e in envs]
+            env_choices.append("— use <base_url> placeholder —")
+            picked = questionary.select(
+                "Embed a base URL? (optional):",
+                choices=env_choices,
+                style=_SELECT_STYLE,
+                pointer=_POINTER,
+                instruction="",
+            ).ask()
+            if picked and "→" in picked:
+                base_url = picked.split("→")[1].strip()
+    except Exception:
+        pass
+
+    if is_windows:
+        wrapper = build_powershell_wrapper(ep, base_url=base_url)
+        lang_label = "PowerShell  ·  Windows"
+        border = "magenta"
+        title_color = "magenta"
+    else:
+        wrapper = build_curl_wrapper(ep, base_url=base_url)
+        lang_label = "curl  ·  Linux / macOS"
+        border = "yellow"
+        title_color = "yellow"
+
+    from rich.text import Text
+
+    # ── Colour-code the command without any background ────────────────────
+    # Palette stays within Rouint's #00bfff cyan family
+    def _style_curl_line(line: str) -> Text:
+        t = Text()
+        stripped = line.lstrip()
+        indent = " " * (len(line) - len(stripped))
+        if stripped.startswith("curl"):
+            t.append(indent)
+            t.append("curl", style="bold #00bfff")
+        elif stripped.startswith("-X "):
+            flag, _, val = stripped.partition(" ")
+            t.append(indent)
+            t.append(flag, style="bold white")
+            t.append(" ")
+            t.append(val.rstrip(" \\"), style="bold #00bfff")
+        elif stripped.startswith("-H "):
+            _, _, rest = stripped.partition(" ")
+            rest = rest.strip().rstrip(" \\").strip('"')
+            key, _, val = rest.partition(": ")
+            t.append(indent)
+            t.append("-H ", style="white")
+            t.append('"', style="dim")
+            t.append(key, style="cyan")
+            t.append(": ", style="dim")
+            t.append(val, style="white")
+            t.append('"', style="dim")
+        elif stripped.startswith("-F "):
+            _, _, rest = stripped.partition(" ")
+            rest = rest.strip().rstrip(" \\").strip('"')
+            t.append(indent)
+            t.append("-F ", style="white")
+            t.append(f'"{rest}"', style="#00bfff")
+        elif stripped.startswith("-d "):
+            _, _, rest = stripped.partition(" ")
+            t.append(indent)
+            t.append("-d ", style="white")
+            t.append(rest.strip().rstrip(" \\"), style="bright_white")
+        elif stripped.startswith("-w "):
+            _, _, rest = stripped.partition(" ")
+            t.append(indent)
+            t.append("-w ", style="white")
+            t.append(rest.strip().rstrip(" \\"), style="dim")
+        elif stripped.startswith('"') and ("<base_url>" in stripped or stripped.startswith('"http')):
+            t.append(indent)
+            t.append(stripped.rstrip(" \\"), style="bold bright_white")
+        else:
+            t.append(indent)
+            t.append(stripped.rstrip(" \\"), style="dim white")
+        # trailing backslash continuation
+        if line.rstrip().endswith("\\"):
+            t.append(" \\", style="dim")
+        return t
+
+    def _style_ps_line(line: str) -> Text:
+        t = Text()
+        stripped = line.lstrip()
+        indent = " " * (len(line) - len(stripped))
+        if stripped.startswith("#"):
+            t.append(indent + stripped, style="dim")
+        elif stripped.startswith("$headers") or stripped.startswith("$params") or stripped.startswith("$form"):
+            varname, _, rest = stripped.partition(" ")
+            t.append(indent)
+            t.append(varname, style="bold #00bfff")
+            t.append(" " + rest, style="white")
+        elif stripped.startswith("$response") or stripped.startswith("Invoke-WebRequest"):
+            t.append(indent)
+            t.append(stripped, style="bold #00bfff")
+        elif "=" in stripped and not stripped.startswith("}"):
+            key, _, val = stripped.partition(" = ")
+            t.append(indent)
+            t.append(key, style="cyan")
+            t.append(" = ", style="dim")
+            t.append(val, style="bright_white")
+        elif stripped in ("{", "}", "@{", "@{}"):
+            t.append(indent + stripped, style="dim white")
+        else:
+            t.append(indent + stripped, style="white")
+        return t
+
+    lines = wrapper.splitlines()
+    styled_lines: list[Text] = []
+    for raw_line in lines:
+        if is_windows:
+            styled_lines.append(_style_ps_line(raw_line))
+        else:
+            styled_lines.append(_style_curl_line(raw_line))
+
+    from rich.console import Group as RichGroup
+
+    from rich.text import Text as RText
+
+    content = RichGroup(*styled_lines)
+
+    console.print()
+    console.print(Panel(
+        content,
+        title=f"[bold {title_color}]WRAPPER COMMAND  ({lang_label})[/bold {title_color}]",
+        title_align="left",
+        border_style=border,
+        expand=True,
+    ))
+
+    # Auto-copy the raw command to the system clipboard
+    if _copy_to_clipboard(wrapper):
+        console.print("[dim]✓ Copied to clipboard.[/dim]")
+    else:
+        console.print("[dim]⚠  Clipboard unavailable — copy manually from above.[/dim]")
+
+
 @cli.command(name="list-api")
-def list_api():
+@click.option(
+    "--show-wrapper",
+    is_flag=True,
+    default=False,
+    help="Show the native tool command (curl / PowerShell) for each selected endpoint.",
+)
+def list_api(show_wrapper):
     """List, inspect, edit, or delete saved endpoints.
 
     Select any saved endpoint to:
@@ -919,6 +1232,11 @@ def list_api():
       Edit              — modify method, path, headers, auth, or body
       View Configuration — print the raw JSON config
       Delete            — permanently remove the endpoint
+      Show Wrapper      — display the native curl / PowerShell command
+
+    \b
+    Options:
+      --show-wrapper   Go straight to the wrapper view after selecting an endpoint
     """
     display_header("Manage Saved API Endpoints")
     if not is_initialized():
@@ -937,10 +1255,17 @@ def list_api():
         if not selected_ep:
             break
 
+        # --show-wrapper: skip the action menu, render wrapper and loop back
+        if show_wrapper:
+            _render_wrapper_panel(selected_ep)
+            console.print()
+            continue
+
         # Action Menu
         action = questionary.select("What would you like to do with this endpoint?", choices=[
             "Edit Endpoint",
             "View Configuration",
+            "Show Wrapper",
             "Delete Endpoint",
             "Back"
         ], style=_SELECT_STYLE, pointer=_POINTER, instruction="").ask()
@@ -951,6 +1276,9 @@ def list_api():
         elif action == "View Configuration":
             console.print("\n[bold]Configuration:[/bold]")
             console.print(json.dumps(selected_ep, indent=2))
+        elif action == "Show Wrapper":
+            _render_wrapper_panel(selected_ep)
+            console.print()
         elif action == "Delete Endpoint":
             confirm = questionary.confirm("Are you sure you want to delete this endpoint?").ask()
             if confirm:

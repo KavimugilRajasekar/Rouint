@@ -150,7 +150,7 @@ def test_missing_base_urls_hint_and_testing_disabled(clean_workspace):
 
     # list-api is enabled because endpoints exist
     assert item_map["list-api"].enabled is True
-    assert item_map["list-api"].hint is None
+    assert item_map["list-api"].hint == "--show-wrapper available"
 
 
 # ---------------------------------------------------------------------------
@@ -215,7 +215,7 @@ def test_fully_configured_workspace_selectable(clean_workspace):
     assert item_map["start-test"].hint == "--no-metrics available"
 
     assert item_map["list-api"].enabled is True
-    assert item_map["list-api"].hint is None
+    assert item_map["list-api"].hint == "--show-wrapper available"
 
 
 # ---------------------------------------------------------------------------
