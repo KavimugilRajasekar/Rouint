@@ -37,10 +37,10 @@ console = Console(legacy_windows=False)
 # Constants
 # ---------------------------------------------------------------------------
 
-_ASCII_ART = (
-    "[bold cyan]█▀▀█ █▀▀█ █  █ ▀█▀ █  █ ▀█▀[/bold cyan]\n"
-    "[bold cyan]█▄▄▀ █  █ █  █  █  █▀▄█  █ [/bold cyan]\n"
-    "[bold cyan]█  █ █▄▄█ ▀▄▄▀ ▄█▄ █  █  █ [/bold cyan]"
+_ASCII_ART_TEMPLATE = (
+    "[{style}]█▀▀█ █▀▀█ █  █ ▀█▀ █  █ ▀█▀[/{style}]\n"
+    "[{style}]█▄▄▀ █  █ █  █  █  █▀▄█  █ [/{style}]\n"
+    "[{style}]█  █ █▄▄█ ▀▄▄▀ ▄█▄ █  █  █ [/{style}]"
 )
 
 _TAGLINE = "cURL-Powered API Management & Testing Tool"
@@ -53,6 +53,7 @@ _COMMANDS: list[tuple[str, str]] = [
     ("start-test",   "Select an endpoint & base URL to execute test request"),
     ("list-api",     "List, inspect, edit, or delete saved endpoints"),
     ("clear-token",  "Clear the saved temporary Bearer token"),
+    ("set-theme",    "Choose a colour theme for the CLI interface"),
 ]
 
 
@@ -75,6 +76,23 @@ def _truncate_cwd(cwd: Union[Path, str], max_len: int = 42) -> str:
     if len(cwd_str) > max_len:
         return "..." + cwd_str[-(max_len - 3):]
     return cwd_str
+
+
+def _active_styles() -> dict:
+    """
+    Return the active theme dict, falling back gracefully if the theme module
+    hasn't been set up yet (e.g. during first-run before workspace init).
+    """
+    try:
+        from rouint.ui.theme import get_active_theme
+        return get_active_theme()
+    except Exception:
+        return {
+            "banner_style": "bold cyan",
+            "border_style": "cyan",
+            "panel_title":  "bold cyan",
+            "accent_rich":  "cyan",
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -122,17 +140,37 @@ def display_header(subtitle: Optional[str] = None, force_banner: bool = False) -
     global _session_banner_displayed
 
     if not _session_banner_displayed or force_banner:
+        styles = _active_styles()
+        accent        = styles.get("accent_rich", "cyan")
+        ascii_colours = styles.get("ascii_colours", None)
+
+        if ascii_colours and len(ascii_colours) == 3:
+            # Per-line gradient: bright → mid → deep
+            c0, c1, c2 = ascii_colours
+            ascii_art = (
+                f"[bold {c0}]█▀▀█ █▀▀█ █  █ ▀█▀ █  █ ▀█▀[/bold {c0}]\n"
+                f"[bold {c1}]█▄▄▀ █  █ █  █  █  █▀▄█  █ [/bold {c1}]\n"
+                f"[bold {c2}]█  █ █▄▄█ ▀▄▄▀ ▄█▄ █  █  █ [/bold {c2}]"
+            )
+        else:
+            banner_style = styles.get("banner_style", "bold cyan")
+            ascii_art = (
+                f"[{banner_style}]█▀▀█ █▀▀█ █  █ ▀█▀ █  █ ▀█▀[/{banner_style}]\n"
+                f"[{banner_style}]█▄▄▀ █  █ █  █  █  █▀▄█  █ [/{banner_style}]\n"
+                f"[{banner_style}]█  █ █▄▄█ ▀▄▄▀ ▄█▄ █  █  █ [/{banner_style}]"
+            )
+
         grid = Table.grid(padding=(0, 4))
         grid.add_column()
         grid.add_column()
 
         info_text = (
-            f"[bold white]Rouint CLI[/bold white] [cyan]v{__version__}[/cyan]\n"
+            f"[bold white]Rouint CLI[/bold white] [{accent}]v{__version__}[/{accent}]\n"
             f"[dim]{_TAGLINE}[/dim]\n"
-            f"[dim]Workspace:[/dim] [cyan]{_truncate_cwd(Path.cwd())}[/cyan]"
+            f"[dim]Workspace:[/dim] [{accent}]{_truncate_cwd(Path.cwd())}[/{accent}]"
         )
 
-        grid.add_row(Text.from_markup(_ASCII_ART), Text.from_markup(info_text))
+        grid.add_row(Text.from_markup(ascii_art), Text.from_markup(info_text))
 
         console.print()
         console.print(grid)
@@ -140,12 +178,14 @@ def display_header(subtitle: Optional[str] = None, force_banner: bool = False) -
         _session_banner_displayed = True
 
     if subtitle:
-        console.print("[dim cyan]│[/dim cyan]")
+        styles = _active_styles()
+        accent = styles.get("accent_rich", "cyan")
+        console.print(f"[dim {accent}]│[/dim {accent}]")
         console.print(
-            f"[bold cyan]◆  {subtitle}[/bold cyan]  "
+            f"[bold {accent}]◆  {subtitle}[/bold {accent}]  "
             f"[dim](Press Esc to exit anytime)[/dim]"
         )
-        console.print("[dim cyan]│[/dim cyan]\n")
+        console.print(f"[dim {accent}]│[/dim {accent}]\n")
 
 
 
@@ -159,8 +199,13 @@ def display_banner() -> None:
     """
     display_header()
 
+    styles = _active_styles()
+    border  = styles.get("border_style", "cyan")
+    title_s = styles.get("panel_title", "bold cyan")
+    accent  = styles.get("accent_rich", "cyan")
+
     cmd_table = Table(box=None, show_header=False, pad_edge=False, padding=(0, 2))
-    cmd_table.add_column("Command", style="bold cyan")
+    cmd_table.add_column("Command", style=f"bold {accent}")
     cmd_table.add_column("Description", style="white")
 
     for cmd, desc in _COMMANDS:
@@ -168,13 +213,13 @@ def display_banner() -> None:
 
     console.print(Panel(
         cmd_table,
-        title="[bold yellow]Available Commands[/bold yellow]",
+        title=f"[{title_s}]Available Commands[/{title_s}]",
         title_align="left",
-        border_style="yellow",
+        border_style=border,
         expand=False,
         padding=(1, 2),
     ))
     console.print(
-        "[dim]  Usage: [bold white]rouint <command>[/bold white]  "
-        "(e.g., [bold cyan]rouint start-test[/bold cyan])[/dim]\n"
+        f"[dim]  Usage: [bold white]rouint <command>[/bold white]  "
+        f"(e.g., [bold {accent}]rouint start-test[/bold {accent}])[/dim]\n"
     )

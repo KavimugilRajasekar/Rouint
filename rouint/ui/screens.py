@@ -21,7 +21,7 @@ from questionary.prompts.common import InquirerControl
 from questionary.styles import merge_styles_default
 
 from rouint.core.manager import EndpointManager
-from rouint.ui.components import console, display_header, set_in_launcher
+from rouint.ui.components import console, display_header, set_in_launcher, reset_banner_state
 from rich.table import Table
 from rouint.utils.config import (
     CONFIG_FILE,
@@ -38,6 +38,29 @@ CMD_WIDTH = 16
 DESC_WIDTH = 34
 SEPARATOR_BAR = "─" * 16
 
+
+def _build_launcher_style() -> questionary.Style:
+    """Build a Questionary Style from the currently active theme."""
+    try:
+        from rouint.ui.theme import build_qs_style
+        return build_qs_style()
+    except Exception:
+        return questionary.Style([
+            ("qmark",          "fg:#00bfff bold"),
+            ("question",       "bold"),
+            ("answer",         "fg:#00bfff bold"),
+            ("pointer",        "fg:#00bfff bold"),
+            ("highlighted",    "fg:#00bfff bold"),
+            ("selected",       "fg:#00bfff"),
+            ("instruction",    "fg:#666666"),
+            ("disabled",       ""),
+            ("separator",      "fg:#555555"),
+            ("ansibrightblack","fg:#767676"),
+        ])
+
+
+# LAUNCHER_STYLE is evaluated lazily via _build_launcher_style() at call-time
+# so that theme changes made mid-session are always reflected.
 LAUNCHER_STYLE = questionary.Style([
     ("qmark",          "fg:#00bfff bold"),
     ("question",       "bold"),
@@ -286,7 +309,26 @@ def get_menu_items(state: Optional[WorkspaceState] = None) -> list[MenuItem]:
             enabled=True,
         ))
 
-    # 7. help: Always visible and enabled — shows command reference inline.
+    # 7. set-theme: Always available — choose colour theme.
+    try:
+        from rouint.ui.theme import get_active_theme_key, THEMES
+        active_key = get_active_theme_key()
+        active_name = THEMES[active_key]["display_name"]
+        items.append(MenuItem(
+            name="set-theme",
+            description="Choose a colour theme",
+            hint=f"active: {active_name}",
+            enabled=True,
+        ))
+    except Exception:
+        items.append(MenuItem(
+            name="set-theme",
+            description="Choose a colour theme",
+            hint=None,
+            enabled=True,
+        ))
+
+    # 8. help: Always visible and enabled — shows command reference inline.
     items.append(MenuItem(
         name="help",
         description="Show command reference",
@@ -294,7 +336,7 @@ def get_menu_items(state: Optional[WorkspaceState] = None) -> list[MenuItem]:
         enabled=True,
     ))
 
-    # 8. Exit: Always available to close the interactive menu cleanly.
+    # 9. Exit: Always available to close the interactive menu cleanly.
     items.append(MenuItem(
         name="— Exit —",
         description="",
@@ -461,7 +503,7 @@ def prompt_launcher_menu(
     When answered, highlights the command name in cyan and styles the description/hint in dark grey,
     with excessive column-padding whitespace stripped out.
     """
-    merged_style = merge_styles_default([style or LAUNCHER_STYLE])
+    merged_style = merge_styles_default([style or _build_launcher_style()])
 
     item_map = {item.name: item for item in menu_items} if menu_items else {}
 
@@ -568,6 +610,13 @@ def _show_help_inline(ctx: click.Context) -> None:
     from rich.table import Table
     from rich.text import Text
 
+    try:
+        from rouint.ui.theme import get_active_theme
+        styles = get_active_theme()
+        border = styles.get("border_style", "bright_black")
+    except Exception:
+        border = "bright_black"
+
     table = Table.grid(padding=(0, 2))
     table.add_column(style="bold cyan", no_wrap=True)
     table.add_column(style="dim")
@@ -580,6 +629,7 @@ def _show_help_inline(ctx: click.Context) -> None:
         ("start-test",   "[--no-metrics]",    "Run a test against a saved endpoint"),
         ("list-api",     "[--show-wrapper]",  "List, inspect, edit, or delete saved endpoints"),
         ("clear-token",  "",                  "Clear the saved temporary Bearer token"),
+        ("set-theme",    "",                  "Choose a colour theme for the CLI interface"),
     ]
 
     for cmd, flag, desc in commands:
@@ -599,7 +649,7 @@ def _show_help_inline(ctx: click.Context) -> None:
         table,
         title="[bold]Rouint — Command Reference[/bold]",
         subtitle="[dim]rouint <command> --help  for per-command options[/dim]",
-        border_style="bright_black",
+        border_style=border,
         padding=(1, 2),
         title_align="center",
         subtitle_align="center",
@@ -659,7 +709,7 @@ def interactive_launcher(ctx: click.Context) -> None:
                         Choice("Standard test  (with metrics)", value=False),
                         Choice("Skip metrics   (--no-metrics)", value=True),
                     ],
-                    style=LAUNCHER_STYLE,
+                    style=_build_launcher_style(),
                     pointer="❯",
                     instruction="",
                 ).ask()
@@ -681,7 +731,7 @@ def interactive_launcher(ctx: click.Context) -> None:
                         Choice("Manage endpoints     (standard)",       value=False),
                         Choice("View wrapper command (--show-wrapper)",  value=True),
                     ],
-                    style=LAUNCHER_STYLE,
+                    style=_build_launcher_style(),
                     pointer="❯",
                     instruction="",
                 ).ask()
@@ -691,6 +741,17 @@ def interactive_launcher(ctx: click.Context) -> None:
                 cmd = ctx.command.get_command(ctx, "list-api")
                 if cmd is not None:
                     ctx.invoke(cmd, show_wrapper=mode)
+                console.print()
+                continue
+
+            # ── set-theme: invoke directly ────────────────────────────────────
+            if selected == "set-theme":
+                cmd = ctx.command.get_command(ctx, "set-theme")
+                if cmd is not None:
+                    ctx.invoke(cmd)
+                # After theme change, reset banner so next loop iteration
+                # re-renders the header in the newly selected colour.
+                reset_banner_state()
                 console.print()
                 continue
 

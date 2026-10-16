@@ -12,6 +12,7 @@ ENV_DIR = "environments"
 ENDPOINTS_DIR = "endpoints"
 BODIES_DIR = "bodies"
 TEMP_TOKEN_FILE = ".temp_token"
+THEME_FILE = "theme"
 
 def get_workspace_root() -> Path:
     """Returns the path to the current working directory as workspace root."""

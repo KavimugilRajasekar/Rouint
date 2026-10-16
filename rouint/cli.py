@@ -57,15 +57,43 @@ console = Console(legacy_windows=False)
 # Questionary custom style & pointer
 # ---------------------------------------------------------------------------
 
-_SELECT_STYLE = questionary.Style([
-    ("qmark",       "fg:#00bfff bold"),   # the ? prefix
-    ("question",    "bold"),
-    ("answer",      "fg:#00bfff bold"),
-    ("pointer",     "fg:#00bfff bold"),   # the ◆ pointer
-    ("highlighted", "fg:#00bfff bold"),   # hovered item
-    ("selected",    "fg:#00bfff"),
-    ("instruction", "fg:#666666"),
-])
+def _get_select_style() -> questionary.Style:
+    """Return a questionary Style built from the active theme. Called at use-time
+    so theme changes mid-session are always reflected."""
+    try:
+        from rouint.ui.theme import build_qs_style
+        return build_qs_style()
+    except Exception:
+        return questionary.Style([
+            ("qmark",       "fg:#00bfff bold"),
+            ("question",    "bold"),
+            ("answer",      "fg:#00bfff bold"),
+            ("pointer",     "fg:#00bfff bold"),
+            ("highlighted", "fg:#00bfff bold"),
+            ("selected",    "fg:#00bfff"),
+            ("instruction", "fg:#666666"),
+        ])
+
+
+def _theme_accent() -> str:
+    """Return the active theme's hex accent colour string (e.g. '#00bfff').
+    Used to colour panels, syntax highlighting, and inline text."""
+    try:
+        from rouint.ui.theme import get_active_theme
+        return get_active_theme()["accent"]
+    except Exception:
+        return "#00bfff"
+
+
+def _theme_accent_rich() -> str:
+    """Return the active theme's Rich accent name (e.g. 'cyan').
+    Used in Rich markup like [bold cyan]...[/bold cyan]."""
+    try:
+        from rouint.ui.theme import get_active_theme
+        return get_active_theme()["accent_rich"]
+    except Exception:
+        return "cyan"
+
 
 _POINTER = "❯"
 
@@ -79,7 +107,7 @@ def prompt_endpoint_select(
     Construct a Question prompt using AlignedInquirerControl to enable per-token
     highlighting (name-only glow) on hover.
     """
-    merged_style = merge_styles_default([style or _SELECT_STYLE])
+    merged_style = merge_styles_default([style or _get_select_style()])
 
     ic = AlignedInquirerControl(
         choices,
@@ -251,7 +279,7 @@ def select_endpoint():
     q = prompt_endpoint_select(
         "Select an endpoint (or press Esc to exit):",
         choices=choices,
-        style=_SELECT_STYLE,
+        style=_get_select_style(),
         pointer=_POINTER,
     )
     selected_name = q.ask()
@@ -290,7 +318,7 @@ def handle_endpoint_creation(existing_ep=None):
                 "HTTP method:",
                 choices=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
                 default=method,
-                style=_SELECT_STYLE,
+                style=_get_select_style(),
                 pointer=_POINTER,
                 instruction="",
             ).ask()
@@ -364,7 +392,7 @@ def handle_endpoint_creation(existing_ep=None):
                 "Authentication type?",
                 choices=["None", "Bearer Token", "Custom"],
                 default=display_default,
-                style=_SELECT_STYLE,
+                style=_get_select_style(),
                 pointer=_POINTER,
                 instruction="",
             ).ask()
@@ -503,6 +531,12 @@ def cli(ctx):
     Run without a command to see the full command menu.
     """
     reset_banner_state()
+    # Load and apply the persisted theme before any rendering happens
+    try:
+        from rouint.ui.theme import load_theme
+        load_theme()
+    except Exception:
+        pass
     if ctx.invoked_subcommand is None:
         interactive_launcher(ctx)
 
@@ -576,7 +610,7 @@ def add_base_url():
     action = questionary.select(
         "What would you like to do?",
         choices=["Add a new base URL", "Delete an environment"],
-        style=_SELECT_STYLE,
+        style=_get_select_style(),
         pointer=_POINTER,
         instruction="",
     ).ask()
@@ -626,7 +660,7 @@ def add_base_url():
         selected = questionary.select(
             "Select environment to delete:",
             choices=choices,
-            style=_SELECT_STYLE,
+            style=_get_select_style(),
             pointer=_POINTER,
             instruction="",
         ).ask()
@@ -686,7 +720,7 @@ def start_test(no_metrics):
                 return
             else:
                 env_choices = [f"{e['name']}  →  {e['base_url']}" for e in envs]
-                selected_env_label = questionary.select("Select a base URL to test against:", choices=env_choices, style=_SELECT_STYLE, pointer=_POINTER, instruction="").ask()
+                selected_env_label = questionary.select("Select a base URL to test against:", choices=env_choices, style=_get_select_style(), pointer=_POINTER, instruction="").ask()
                 if not selected_env_label:
                     return
                 chosen_env_name = selected_env_label.split("  →  ")[0].strip()
@@ -699,14 +733,14 @@ def start_test(no_metrics):
             values = {}
             cancelled = False
             for p in placeholders:
-                val = questionary.text(f"Enter value for {p}:", style=_SELECT_STYLE).ask()
+                val = questionary.text(f"Enter value for {p}:", style=_get_select_style()).ask()
                 if val is None:
                     console.print("[yellow]Cancelled.[/yellow]")
                     cancelled = True
                     break
                 while not val.strip():
                     console.print(f"[red]Value for '{p}' cannot be empty.[/red]")
-                    val = questionary.text(f"Enter value for {p}:", style=_SELECT_STYLE).ask()
+                    val = questionary.text(f"Enter value for {p}:", style=_get_select_style()).ask()
                     if val is None:
                         cancelled = True
                         break
@@ -807,9 +841,9 @@ def start_test(no_metrics):
 
             console.print(Panel(
                 "\n".join(request_lines),
-                title="[bold blue]REQUEST[/bold blue]",
+                title="[bold]REQUEST[/bold]",
                 title_align="left",
-                border_style="blue",
+                border_style=_theme_accent_rich(),
                 expand=True,
             ))
 
@@ -853,9 +887,9 @@ def start_test(no_metrics):
 
             console.print(Panel(
                 "\n".join(response_lines),
-                title="[bold cyan]RESPONSE[/bold cyan]",
+                title=f"[bold {_theme_accent_rich()}]RESPONSE[/bold {_theme_accent_rich()}]",
                 title_align="left",
-                border_style="cyan",
+                border_style=_theme_accent_rich(),
                 expand=True,
             ))
 
@@ -1085,7 +1119,7 @@ def _render_wrapper_panel(ep: dict) -> None:
             picked = questionary.select(
                 "Embed a base URL? (optional):",
                 choices=env_choices,
-                style=_SELECT_STYLE,
+                style=_get_select_style(),
                 pointer=_POINTER,
                 instruction="",
             ).ask()
@@ -1097,31 +1131,31 @@ def _render_wrapper_panel(ep: dict) -> None:
     if is_windows:
         wrapper = build_powershell_wrapper(ep, base_url=base_url)
         lang_label = "PowerShell  ·  Windows"
-        border = "magenta"
-        title_color = "magenta"
+        border = _theme_accent_rich()
+        title_color = _theme_accent_rich()
     else:
         wrapper = build_curl_wrapper(ep, base_url=base_url)
         lang_label = "curl  ·  Linux / macOS"
-        border = "yellow"
-        title_color = "yellow"
+        border = _theme_accent_rich()
+        title_color = _theme_accent_rich()
 
     from rich.text import Text
 
-    # ── Colour-code the command without any background ────────────────────
-    # Palette stays within Rouint's #00bfff cyan family
+    # ── Colour-code the command using the active theme accent ─────────────
     def _style_curl_line(line: str) -> Text:
+        accent = _theme_accent()
         t = Text()
         stripped = line.lstrip()
         indent = " " * (len(line) - len(stripped))
         if stripped.startswith("curl"):
             t.append(indent)
-            t.append("curl", style="bold #00bfff")
+            t.append("curl", style=f"bold {accent}")
         elif stripped.startswith("-X "):
             flag, _, val = stripped.partition(" ")
             t.append(indent)
             t.append(flag, style="bold white")
             t.append(" ")
-            t.append(val.rstrip(" \\"), style="bold #00bfff")
+            t.append(val.rstrip(" \\"), style=f"bold {accent}")
         elif stripped.startswith("-H "):
             _, _, rest = stripped.partition(" ")
             rest = rest.strip().rstrip(" \\").strip('"')
@@ -1129,7 +1163,7 @@ def _render_wrapper_panel(ep: dict) -> None:
             t.append(indent)
             t.append("-H ", style="white")
             t.append('"', style="dim")
-            t.append(key, style="cyan")
+            t.append(key, style=f"{accent}")
             t.append(": ", style="dim")
             t.append(val, style="white")
             t.append('"', style="dim")
@@ -1138,7 +1172,7 @@ def _render_wrapper_panel(ep: dict) -> None:
             rest = rest.strip().rstrip(" \\").strip('"')
             t.append(indent)
             t.append("-F ", style="white")
-            t.append(f'"{rest}"', style="#00bfff")
+            t.append(f'"{rest}"', style=accent)
         elif stripped.startswith("-d "):
             _, _, rest = stripped.partition(" ")
             t.append(indent)
@@ -1155,12 +1189,12 @@ def _render_wrapper_panel(ep: dict) -> None:
         else:
             t.append(indent)
             t.append(stripped.rstrip(" \\"), style="dim white")
-        # trailing backslash continuation
         if line.rstrip().endswith("\\"):
             t.append(" \\", style="dim")
         return t
 
     def _style_ps_line(line: str) -> Text:
+        accent = _theme_accent()
         t = Text()
         stripped = line.lstrip()
         indent = " " * (len(line) - len(stripped))
@@ -1169,15 +1203,15 @@ def _render_wrapper_panel(ep: dict) -> None:
         elif stripped.startswith("$headers") or stripped.startswith("$params") or stripped.startswith("$form"):
             varname, _, rest = stripped.partition(" ")
             t.append(indent)
-            t.append(varname, style="bold #00bfff")
+            t.append(varname, style=f"bold {accent}")
             t.append(" " + rest, style="white")
         elif stripped.startswith("$response") or stripped.startswith("Invoke-WebRequest"):
             t.append(indent)
-            t.append(stripped, style="bold #00bfff")
+            t.append(stripped, style=f"bold {accent}")
         elif "=" in stripped and not stripped.startswith("}"):
             key, _, val = stripped.partition(" = ")
             t.append(indent)
-            t.append(key, style="cyan")
+            t.append(key, style=accent)
             t.append(" = ", style="dim")
             t.append(val, style="bright_white")
         elif stripped in ("{", "}", "@{", "@{}"):
@@ -1268,7 +1302,7 @@ def list_api(show_wrapper):
             "Show Wrapper",
             "Delete Endpoint",
             "Back"
-        ], style=_SELECT_STYLE, pointer=_POINTER, instruction="").ask()
+        ], style=_get_select_style(), pointer=_POINTER, instruction="").ask()
 
         if action == "Edit Endpoint":
             handle_endpoint_creation(existing_ep=selected_ep)
@@ -1305,3 +1339,204 @@ def clear_token():
         console.print("[green]✓ Temp token cleared successfully.[/green]")
     else:
         console.print("[yellow]No temp token found to clear.[/yellow]")
+
+
+@cli.command(name="set-theme")
+def set_theme():
+    """Choose a colour theme for the Rouint CLI interface.
+
+    An interactive picker with a real-time live preview — as you arrow
+    through themes the ROUINT banner above the list instantly repaints in
+    the highlighted theme's colour. Press Enter to confirm, Esc to cancel.
+    The selection is persisted to .rouint-data/theme and applied immediately.
+    """
+    from rouint.ui.theme import (
+        THEMES,
+        get_active_theme_key,
+        save_theme,
+        apply_theme,
+        build_qs_style,
+    )
+    from prompt_toolkit import Application
+    from prompt_toolkit.formatted_text import to_formatted_text, HTML, AnyFormattedText
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.keys import Keys
+    from prompt_toolkit.layout import Layout
+    from prompt_toolkit.layout.containers import HSplit, Window
+    from prompt_toolkit.layout.controls import FormattedTextControl
+
+    theme_keys = list(THEMES.keys())
+    active_key = get_active_theme_key()
+
+    # Always open on the first theme so the user sees the full list from the top.
+    # The ✓ marker on the active theme shows what's currently selected.
+    initial_idx = 0
+
+    # Mutable state shared between the live-preview control and key bindings
+    state = {"idx": initial_idx, "confirmed": False, "cancelled": False}
+
+    # ── ANSI colour map from theme → prompt_toolkit colour string ────────────
+    # Use the mid-tone (index 1) from ascii_colours as the accent for the list.
+    _PT_COLOUR = {
+        key: THEMES[key]["ascii_colours"][1]
+        for key in THEMES
+    }
+
+    # ── Banner control ────────────────────────────────────────────────────────
+    # Called on every repaint — reads state["idx"] to pick the preview colour.
+    ASCII_LINES = [
+        "█▀▀█ █▀▀█ █  █ ▀█▀ █  █ ▀█▀",
+        "█▄▄▀ █  █ █  █  █  █▀▄█  █ ",
+        "█  █ █▄▄█ ▀▄▄▀ ▄█▄ █  █  █ ",
+    ]
+
+    def get_banner_text():
+        # Clamp to valid theme index — cancel row (idx == len(theme_keys)) shows
+        # the last theme preview rather than crashing with an index error.
+        safe_idx = min(state["idx"], len(theme_keys) - 1)
+        key    = theme_keys[safe_idx]
+        colour = _PT_COLOUR.get(key, "#00bfff")
+        theme  = THEMES[key]
+
+        # Per-line colours: bright → mid → deep for depth
+        ascii_colours = theme.get("ascii_colours", [colour, colour, colour])
+
+        tokens = []
+
+        # ── Command title (replaces the static display_header above the app) ──
+        tokens.append(("bold", "\n"))
+        for i, line in enumerate(ASCII_LINES):
+            c = ascii_colours[i] if i < len(ascii_colours) else colour
+            tokens.append((f"fg:{c} bold", line + "\n"))
+        tokens.append(("", "\n"))
+        tokens.append((f"fg:{colour} bold", f"  ◆  Set Colour Theme\n"))
+        tokens.append(("fg:#555555", f"  ──────────────────────────────\n"))
+        tokens.append(("", "\n"))
+
+        # ── Live preview: theme name + description in accent colour ──────────
+        tokens.append((f"fg:{colour} bold", f"  {theme['display_name']}\n"))
+        tokens.append(("fg:#767676",         f"  {theme['description']}\n"))
+        tokens.append(("", "\n"))
+
+        return tokens
+
+    banner_control = FormattedTextControl(get_banner_text, focusable=False)
+    banner_window  = Window(content=banner_control, dont_extend_height=True)
+
+    # ── Choice list control ───────────────────────────────────────────────────
+    POINTER = "❯"
+
+    def get_list_text():
+        tokens = []
+        tokens.append(("fg:#888888", "  Select a theme  (↑↓ arrows · Enter confirm · Esc cancel)\n\n"))
+        for i, key in enumerate(theme_keys):
+            theme  = THEMES[key]
+            colour = _PT_COLOUR.get(key, "#00bfff")
+            is_sel = i == state["idx"]
+            is_act = key == active_key
+
+            if is_sel:
+                ptr   = f" {POINTER} "
+                style = f"fg:{colour} bold"
+            else:
+                ptr   = "   "
+                style = ""
+
+            active_mark = " ✓" if is_act else "  "
+            name_col    = f"{theme['display_name']:<16}{active_mark}  "
+            desc_col    = theme["description"]
+
+            tokens.append((style, ptr + name_col))
+            tokens.append(("fg:#767676" if not is_sel else "fg:#767676", desc_col + "\n"))
+
+        tokens.append(("", "\n"))
+
+        # Cancel row
+        is_cancel = state["idx"] == len(theme_keys)
+        if is_cancel:
+            tokens.append(("fg:#888888 bold", f" {POINTER}  — Cancel —\n"))
+        else:
+            tokens.append(("fg:#555555", "    — Cancel —\n"))
+
+        return tokens
+
+    list_control = FormattedTextControl(get_list_text, focusable=True)
+    list_window  = Window(content=list_control, dont_extend_height=True)
+
+    # ── Layout ────────────────────────────────────────────────────────────────
+    # The filler Window at the bottom absorbs all remaining vertical space so
+    # the banner + list stay at the top in full-screen mode.
+    root = HSplit([
+        banner_window,
+        list_window,
+        Window(),   # fills remaining space — keeps content pinned to top
+    ])
+    layout = Layout(root, focused_element=list_window)
+
+    # ── Key bindings ──────────────────────────────────────────────────────────
+    kb = KeyBindings()
+    total_rows = len(theme_keys) + 1  # themes + cancel row
+
+    @kb.add(Keys.Up,   eager=True)
+    @kb.add("k",       eager=True)
+    def move_up(event):
+        state["idx"] = (state["idx"] - 1) % total_rows
+
+    @kb.add(Keys.Down, eager=True)
+    @kb.add("j",       eager=True)
+    def move_down(event):
+        state["idx"] = (state["idx"] + 1) % total_rows
+
+    @kb.add(Keys.ControlM, eager=True)   # Enter
+    def confirm(event):
+        state["confirmed"] = True
+        event.app.exit()
+
+    @kb.add(Keys.Escape,  eager=True)
+    @kb.add(Keys.ControlC, eager=True)
+    @kb.add(Keys.ControlQ, eager=True)
+    def cancel(event):
+        state["cancelled"] = True
+        event.app.exit()
+
+    # ── Run the application ───────────────────────────────────────────────────
+    # full_screen=True takes over the entire terminal (like vim/htop).
+    # On exit the terminal is fully restored — no leftover banner or artifacts.
+    app = Application(
+        layout=layout,
+        key_bindings=kb,
+        full_screen=True,
+        mouse_support=False,
+    )
+    app.run()
+
+    # ── Handle result ─────────────────────────────────────────────────────────
+    if state["cancelled"] or not state["confirmed"]:
+        console.print("\n[dim]No changes made.[/dim]")
+        return
+
+    selected = theme_keys[state["idx"]] if state["idx"] < len(theme_keys) else None
+
+    if not selected:
+        console.print("\n[dim]No changes made.[/dim]")
+        return
+
+    if selected == active_key:
+        theme = THEMES[selected]
+        console.print(
+            f"\n[dim]Already using [/dim][bold]{theme['display_name']}[/bold]"
+            "[dim]. No change.[/dim]"
+        )
+        return
+
+    apply_theme(selected)
+    save_theme(selected)
+
+    theme  = THEMES[selected]
+    colour = theme["accent_rich"]
+    console.print()
+    console.print(
+        f"[bold {colour}]✓ Theme set to {theme['display_name']}[/bold {colour}]"
+        f"  [dim]{theme['description']}[/dim]"
+    )
+    console.print("[dim]Saved to .rouint-data/theme — active across all sessions.[/dim]")
