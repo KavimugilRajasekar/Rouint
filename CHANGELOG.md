@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [1.1.4] — 2026-10-16
+
+### Added
+
+- **CI wiki sync workflow** — new GitHub Actions workflow (`.github/workflows/wiki.yml`) that automatically syncs the `wiki/` directory to the GitHub Wiki on every push to `main`.
+
+### Fixed
+
+- **Home.md title formatting** — corrected title formatting in `wiki/Home.md` for consistent rendering.
+
+---
+
 ## [1.1.3] — 2026-10-15
 
 ### Added
@@ -104,6 +116,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+[1.1.4 vs 1.1.3](https://github.com/KavimugilRajasekar/Rouint/compare/v1.1.3...v1.1.4)
 [1.1.3 vs 1.1.2](https://github.com/KavimugilRajasekar/Rouint/compare/v1.1.2...v1.1.3)
 [1.1.2 vs 1.1.1](https://github.com/KavimugilRajasekar/Rouint/compare/v1.1.1...v1.1.2)
 [1.1.1 vs 1.1.0](https://github.com/KavimugilRajasekar/Rouint/compare/v1.1.0...v1.1.1)

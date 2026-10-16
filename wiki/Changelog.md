@@ -8,6 +8,18 @@ All notable changes to Rouint are documented here. The format follows [Keep a Ch
 
 ---
 
+## [1.1.4] — 2026-10-16
+
+### Added
+
+- **CI wiki sync workflow** — new GitHub Actions workflow (`.github/workflows/wiki.yml`) that automatically syncs the `wiki/` directory to the GitHub Wiki on every push to `main`.
+
+### Fixed
+
+- **Home.md title formatting** — corrected title formatting in `wiki/Home.md` for consistent rendering.
+
+---
+
 ## [1.1.3] — 2026-10-15
 
 ### Added
@@ -107,6 +119,7 @@ All notable changes to Rouint are documented here. The format follows [Keep a Ch
 
 | Version | Date | Headline |
 |---------|------|---------|
+| 1.1.4 | 2026-10-16 | CI wiki sync workflow, Home.md title fix |
 | 1.1.3 | 2026-10-15 | Wrapper view, --version flag, clipboard copy, launcher improvements |
 | 1.1.2 | 2026-10-13 | Aligned path previews in endpoint selector |
 | 1.1.1 | 2026-10-12 | Interactive TUI launcher, Windows hidden folder |
@@ -117,6 +130,7 @@ All notable changes to Rouint are documented here. The format follows [Keep a Ch
 
 Full diff links:
 
+- [1.1.4 vs 1.1.3](https://github.com/KavimugilRajasekar/Rouint/compare/v1.1.3...v1.1.4)
 - [1.1.3 vs 1.1.2](https://github.com/KavimugilRajasekar/Rouint/compare/v1.1.2...v1.1.3)
 - [1.1.2 vs 1.1.1](https://github.com/KavimugilRajasekar/Rouint/compare/v1.1.1...v1.1.2)
 - [1.1.1 vs 1.1.0](https://github.com/KavimugilRajasekar/Rouint/compare/v1.1.0...v1.1.1)

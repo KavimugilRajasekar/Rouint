@@ -95,8 +95,8 @@ rouint clear-token     ← remove saved Bearer token
 
 ## Current Version
 
-**v1.1.3** — Wrapper view (`--show-wrapper`), `--version` flag, auto clipboard copy, launcher improvements  
-Released: 2026-10-15
+**v1.1.4** — CI wiki sync workflow, Home.md title fix  
+Released: 2026-10-16
 
 See the full [Changelog](Changelog.md) for version history.
 
