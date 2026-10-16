@@ -40,6 +40,7 @@ from rouint.ui import (
     interactive_launcher,
     is_in_launcher,
     reset_banner_state,
+    clear_screen,
 )
 from prompt_toolkit.application import Application
 from prompt_toolkit.key_binding import KeyBindings
@@ -550,6 +551,7 @@ def init():
 
     Run this once per project before using any other commands.
     """
+    clear_screen()
     display_header("Workspace Initialization")
     success, message = init_workspace()
     if success:
@@ -576,6 +578,7 @@ def add_new_api():
     The endpoint is saved locally and can be tested against any
     registered base URL using 'rouint start-test'.
     """
+    clear_screen()
     display_header("Add New API Endpoint Definition")
     if not is_initialized():
         console.print("[red]Error: Workspace not initialized. Run 'rouint init' first.[/red]")
@@ -602,6 +605,7 @@ def add_base_url():
       Add     — register a new base URL with a label
       Delete  — remove an existing environment
     """
+    clear_screen()
     display_header("Manage Global Base URLs")
     if not is_initialized():
         console.print("[red]Error: Workspace not initialized. Run 'rouint init' first.[/red]")
@@ -696,6 +700,7 @@ def start_test(no_metrics):
     Options:
       --no-metrics   Skip the metrics box for a cleaner output
     """
+    clear_screen()
     display_header("API Endpoint Test Runner")
     if not is_initialized():
         console.print("[red]Error: Workspace not initialized. Run 'rouint init' first.[/red]")
@@ -839,6 +844,8 @@ def start_test(no_metrics):
                 if not effective_files:
                     request_lines.append("Request Body: None")
 
+            # Clear screen so REQUEST box always appears at top of viewport
+            clear_screen()
             console.print(Panel(
                 "\n".join(request_lines),
                 title="[bold]REQUEST[/bold]",
@@ -1272,6 +1279,7 @@ def list_api(show_wrapper):
     Options:
       --show-wrapper   Go straight to the wrapper view after selecting an endpoint
     """
+    clear_screen()
     display_header("Manage Saved API Endpoints")
     if not is_initialized():
         console.print("[red]Error: Workspace not initialized. Run 'rouint init' first.[/red]")
@@ -1330,6 +1338,7 @@ def clear_token():
     it is saved to .rouint-data/.temp_token for reuse on subsequent
     Bearer-auth requests. Use this command to remove it.
     """
+    clear_screen()
     display_header("Clear Saved Temp Token")
     if not is_initialized():
         console.print("[red]Error: Workspace not initialized. Run 'rouint init' first.[/red]")

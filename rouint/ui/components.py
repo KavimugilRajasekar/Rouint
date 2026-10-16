@@ -17,6 +17,7 @@ Components exposed
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Optional, Union
 
@@ -60,6 +61,20 @@ _COMMANDS: list[tuple[str, str]] = [
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def clear_screen() -> None:
+    """
+    Clear the terminal and move the cursor to the top-left — identical to
+    pressing Ctrl+L. Works on Linux, macOS, and Windows.
+    """
+    import os
+    if os.name == "nt":
+        os.system("cls")
+    else:
+        # ANSI: erase entire display + move cursor to row 1 col 1
+        sys.stdout.write("\033[2J\033[H")
+        sys.stdout.flush()
+
 
 def box_width(console: Optional[Console] = None) -> int:
     """

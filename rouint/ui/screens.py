@@ -21,7 +21,7 @@ from questionary.prompts.common import InquirerControl
 from questionary.styles import merge_styles_default
 
 from rouint.core.manager import EndpointManager
-from rouint.ui.components import console, display_header, set_in_launcher, reset_banner_state
+from rouint.ui.components import console, display_header, set_in_launcher, reset_banner_state, clear_screen
 from rich.table import Table
 from rouint.utils.config import (
     CONFIG_FILE,
@@ -665,6 +665,7 @@ def interactive_launcher(ctx: click.Context) -> None:
     """
     set_in_launcher(True)
     try:
+        clear_screen()
         display_header("Command Launcher")
 
         _loop_guard = 0
@@ -673,11 +674,10 @@ def interactive_launcher(ctx: click.Context) -> None:
             if _loop_guard > 100:  # Safety guard for automated tests
                 break
 
-            # Re-print the subtitle header before every menu so the context
-            # line "◆  Command Launcher  (Press Esc to exit anytime)" always
-            # appears directly above the prompt, even after returning from a
-            # subcommand.
+            # Clear screen and re-print header before every menu render so the
+            # launcher always appears at the top of the viewport — clean and focused.
             if _loop_guard > 1:
+                clear_screen()
                 display_header("Command Launcher")
 
             state = get_workspace_state()

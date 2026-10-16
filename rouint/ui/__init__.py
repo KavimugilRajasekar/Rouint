@@ -11,6 +11,7 @@ from rouint.ui.components import (
     is_in_launcher,
     set_in_launcher,
     reset_banner_state,
+    clear_screen,
 )
 from rouint.ui.screens import (
     WorkspaceState,
@@ -43,6 +44,7 @@ __all__ = [
     "is_in_launcher",
     "set_in_launcher",
     "reset_banner_state",
+    "clear_screen",
     # screens
     "WorkspaceState",
     "MenuItem",
