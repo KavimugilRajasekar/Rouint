@@ -655,7 +655,16 @@ def interactive_launcher(ctx: click.Context) -> None:
     and keeps the user inside the launcher after subcommands complete until they exit.
     """
     set_in_launcher(True)
+
+    # ── Enter Alternate Screen Buffer ─────────────────────────────────────────
+    # This switches the terminal to a separate buffer, preserving the user's
+    # shell history and preventing menu artifacts from flooding the scrollback.
+    import sys
+    sys.stdout.write("\033[?1049h")
+    sys.stdout.flush()
+
     try:
+        # Initial screen setup
         clear_screen()
         display_header(force_banner=True)
 
@@ -665,8 +674,8 @@ def interactive_launcher(ctx: click.Context) -> None:
             if _loop_guard > 100:  # Safety guard for automated tests
                 break
 
-            # Clear screen and re-print header before every menu render so the
-            # launcher always appears at the top of the viewport — clean and focused.
+            # Clear screen and re-print header before every menu render.
+            # Since we are in the alternate screen, this only affects the current viewport.
             clear_screen()
             display_header(force_banner=True)
 
@@ -735,19 +744,19 @@ def interactive_launcher(ctx: click.Context) -> None:
             cmd = ctx.command.get_command(ctx, selected)
             if cmd is not None:
                 ctx.invoke(cmd)
-            # No console.print() here — clear_screen() at loop top handles spacing
     finally:
+        # ── Exit Alternate Screen Buffer ──────────────────────────────────────
+        # Switch back to the main buffer so the user returns to their original shell state.
+        sys.stdout.write("\033[?1049l")
+        sys.stdout.flush()
         set_in_launcher(False)
-        # Clear the entire terminal screen and scrollback on exit to protect
-        # confidential endpoint/request data from remaining in the terminal view.
-        import os
-        if os.name == "nt":
-            os.system("cls")
-        else:
-            # \033[H (Home) + \033[2J (Clear screen) + \033[3J (Clear scrollback)
-            import sys
-            sys.stdout.write("\033[H\033[2J\033[3J")
-            sys.stdout.flush()
 
-        # Re-print the prompt line to make the terminal look natural again
-        print()
+        # Print a polished goodbye message to the original shell buffer.
+        from rouint.ui.theme import get_active_theme
+        styles = get_active_theme()
+        accent = styles.get("accent_rich", "cyan")
+
+        from rich.console import Console
+        exit_console = Console()
+        exit_console.print(f"\n{ ' ' * 4} [bold {accent}]Thank you for using Rouint![/bold {accent}]")
+        exit_console.print(f"{ ' ' * 4} [dim]API management made simple in your terminal.[/dim]\n")
