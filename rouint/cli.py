@@ -55,6 +55,92 @@ from questionary.styles import merge_styles_default
 console = Console(legacy_windows=False)
 
 # ---------------------------------------------------------------------------
+# Custom Click group — overrides --help with the Rich panel
+# ---------------------------------------------------------------------------
+
+class _RichHelpGroup(click.Group):
+    """Click Group subclass that replaces the default --help output with the
+    same Rich-formatted command reference panel shown inside the launcher."""
+
+    def format_help(self, ctx, formatter):
+        # Redirect --help to our Rich panel renderer
+        try:
+            from rouint.ui.theme import load_theme
+            load_theme()
+        except Exception:
+            pass
+        _show_rich_help()
+        sys.exit(0)
+
+
+def _show_rich_help() -> None:
+    """Print the Rich-formatted command reference panel for --help."""
+    from rich.panel import Panel as _Panel
+    from rich.table import Table as _Table
+    from rich.text import Text as _Text
+
+    try:
+        from rouint.ui.theme import get_active_theme
+        styles = get_active_theme()
+        accent  = styles.get("accent_rich", "cyan")
+        border  = styles.get("border_style", "cyan")
+        title_s = styles.get("panel_title", "bold cyan")
+    except Exception:
+        accent, border, title_s = "cyan", "cyan", "bold cyan"
+
+    table = _Table.grid(padding=(0, 2))
+    table.add_column(style=f"bold {accent}", no_wrap=True)
+    table.add_column(style="dim")
+    table.add_column()
+
+    commands = [
+        ("init",         "",                 "Initialize Rouint workspace in the current directory"),
+        ("add-base-url", "",                 "Add or delete a named base URL (local, staging, production)"),
+        ("add-new-api",  "",                 "Define a new API endpoint interactively"),
+        ("start-test",   "[--no-metrics]",   "Run a test against a saved endpoint"),
+        ("list-api",     "[--show-wrapper]", "List, inspect, edit, or delete saved endpoints"),
+        ("clear-token",  "",                 "Clear the saved temporary Bearer token"),
+        ("set-theme",    "",                 "Choose a colour theme for the CLI interface"),
+    ]
+
+    for cmd, flag, desc in commands:
+        flag_text = _Text(flag, style="yellow") if flag else _Text("")
+        table.add_row(cmd, flag_text, desc)
+
+    table.add_row(_Text(""), _Text(""), _Text(""))
+    table.add_row(
+        _Text("--version", style=f"bold {accent}"),
+        _Text(""),
+        _Text("Print the current Rouint version and exit"),
+    )
+    table.add_row(
+        _Text("--help", style=f"bold {accent}"),
+        _Text(""),
+        _Text("Show this help panel"),
+    )
+
+    # Banner
+    try:
+        from rouint.ui.components import display_header
+        display_header()
+    except Exception:
+        pass
+
+    console.print(_Panel(
+        table,
+        title=f"[{title_s}]Rouint — Command Reference[/{title_s}]",
+        subtitle=f"[dim]rouint <command> --help  for per-command options[/dim]",
+        border_style=border,
+        padding=(1, 2),
+        title_align="center",
+        subtitle_align="center",
+    ))
+    console.print(
+        f"  [dim]Run [bold white]rouint[/bold white] without arguments to open the interactive menu.[/dim]\n"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Questionary custom style & pointer
 # ---------------------------------------------------------------------------
 
@@ -520,7 +606,7 @@ def handle_endpoint_creation(existing_ep=None):
 
 
 
-@click.group(invoke_without_command=True)
+@click.group(cls=_RichHelpGroup, invoke_without_command=True)
 @click.version_option(version=__version__, prog_name="Rouint")
 @click.pass_context
 def cli(ctx):
@@ -551,15 +637,32 @@ def init():
 
     Run this once per project before using any other commands.
     """
-    clear_screen()
+    # Always show the header for the 'init' command to establish brand identity,
+    # but only clear the screen if we are in the launcher.
+    if is_in_launcher():
+        clear_screen()
+
     display_header("Workspace Initialization")
+
     success, message = init_workspace()
     if success:
-        console.print(f"[green]✓ {message}[/green]")
         if not is_in_launcher():
+            # When running 'rouint init' directly, we show the success message and guide.
+            console.print(f"[green]✓ {message}[/green]")
             console.print("\nWorkspace: .rouint-data/\nGet started:\n  rouint add-base-url   # add your local/server URLs\n  rouint add-new-api    # define your API endpoints\n  rouint start-test     # pick endpoint + URL and test!\n  rouint list-api       # list/manage saved endpoints")
+        else:
+            console.print(f"[green]✓ {message}[/green]")
+            import time
+            time.sleep(2.0)
+            clear_screen()
     else:
+        # When running 'rouint init' directly and it fails (e.g. already initialized),
+        # we show the header so the user knows what tool they are using, but no other TUI clutter.
         console.print(f"[red]✗ {message}[/red]")
+        if is_in_launcher():
+            import time
+            time.sleep(1.5)
+            clear_screen()
 
 @cli.command(name="add-new-api")
 def add_new_api():
@@ -578,19 +681,34 @@ def add_new_api():
     The endpoint is saved locally and can be tested against any
     registered base URL using 'rouint start-test'.
     """
-    clear_screen()
-    display_header("Add New API Endpoint Definition")
+    if not is_in_launcher():
+        console.print("[red]Error: This command must be run from the Rouint interactive menu. Run 'rouint' to start.[/red]")
+        return
+    if not is_in_launcher():
+        console.print("[red]Error: This command must be run from the Rouint interactive menu. Run 'rouint' to start.[/red]")
+        return
     if not is_initialized():
         console.print("[red]Error: Workspace not initialized. Run 'rouint init' first.[/red]")
         return
+    clear_screen()
+    display_header("Add New API Endpoint Definition")
 
-    id = handle_endpoint_creation()
-    if id is None:
+    endpoint_id = handle_endpoint_creation()
+    if endpoint_id is None:
+        clear_screen()
         console.print("[yellow]Endpoint creation cancelled.[/yellow]")
+        import time
+        time.sleep(1.5)
+        clear_screen()
         return
-    console.print(f"\n[green]✓ Endpoint saved successfully! (ID: {id})[/green]")
+    clear_screen()
+    console.print(f"\n[green]✓ Endpoint saved successfully! (ID: {endpoint_id})[/green]")
+    console.print("[dim]The endpoint is now registered in your workspace.[/dim]\n")
     if not is_in_launcher():
         console.print("[dim]Use 'rouint start-test' to run it against any base URL.[/dim]")
+    import time
+    time.sleep(1.5)
+    clear_screen()
 
 @cli.command(name="add-base-url")
 def add_base_url():
@@ -605,8 +723,9 @@ def add_base_url():
       Add     — register a new base URL with a label
       Delete  — remove an existing environment
     """
-    clear_screen()
-    display_header("Manage Global Base URLs")
+    if not is_in_launcher():
+        console.print("[red]Error: This command must be run from the Rouint interactive menu. Run 'rouint' to start.[/red]")
+        return
     if not is_initialized():
         console.print("[red]Error: Workspace not initialized. Run 'rouint init' first.[/red]")
         return
@@ -622,13 +741,18 @@ def add_base_url():
     if not action:
         return
 
+    clear_screen()
+
     if action == "Add a new base URL":
         console.print("\n[dim]Examples: http://127.0.0.1:8080  |  https://api.myapp.com  |  https://staging.myapp.com[/dim]\n")
 
         while True:
             url = questionary.text("Base URL:").ask()
             if not url or not url.strip():
+                clear_screen()
                 console.print("[yellow]No URL entered. Cancelled.[/yellow]")
+                import time
+                time.sleep(1.5)
                 return
             url = url.strip().rstrip("/")
             if not (url.startswith("http://") or url.startswith("https://")):
@@ -647,12 +771,21 @@ def add_base_url():
             default=suggested
         ).ask()
         if not env_name or not env_name.strip():
+            clear_screen()
             console.print("[yellow]Name is required. Cancelled.[/yellow]")
+            import time
+            time.sleep(1.5)
             return
         env_name = env_name.strip().lower().replace(" ", "-")
 
         save_environment(env_name, url)
+        clear_screen()
         console.print(f"\n[green]✓ '[bold]{env_name}[/bold]' → {url} saved.[/green]")
+        console.print("[dim]You can now use this base URL to test your endpoints.[/dim]\n")
+        # Add a small pause so the user sees the success message before returning to the menu/shell
+        import time
+        time.sleep(1.5)
+        clear_screen()
 
     elif action == "Delete an environment":
         envs = list_environments()
@@ -677,11 +810,24 @@ def add_base_url():
             env_file = get_env_path() / f"{env_name_to_delete}.json"
             if env_file.exists():
                 env_file.unlink()
+                clear_screen()
                 console.print(f"[green]✓ '{env_name_to_delete}' deleted.[/green]")
+                console.print("[dim]Environment removed successfully.[/dim]\n")
+                import time
+                time.sleep(1.5)
+                clear_screen()
             else:
+                clear_screen()
                 console.print("[yellow]Environment file not found.[/yellow]")
+                import time
+                time.sleep(1.5)
+                clear_screen()
         else:
+            clear_screen()
             console.print("[dim]Cancelled.[/dim]")
+            import time
+            time.sleep(1.5)
+            clear_screen()
 
 
 
@@ -700,11 +846,14 @@ def start_test(no_metrics):
     Options:
       --no-metrics   Skip the metrics box for a cleaner output
     """
-    clear_screen()
-    display_header("API Endpoint Test Runner")
+    if not is_in_launcher():
+        console.print("[red]Error: This command must be run from the Rouint interactive menu. Run 'rouint' to start.[/red]")
+        return
     if not is_initialized():
         console.print("[red]Error: Workspace not initialized. Run 'rouint init' first.[/red]")
         return
+    clear_screen()
+    display_header("API Endpoint Test Runner")
 
     # ── Main loop: select endpoint → select base URL → test ──────────────
     while True:
@@ -1279,11 +1428,14 @@ def list_api(show_wrapper):
     Options:
       --show-wrapper   Go straight to the wrapper view after selecting an endpoint
     """
-    clear_screen()
-    display_header("Manage Saved API Endpoints")
+    if not is_in_launcher():
+        console.print("[red]Error: This command must be run from the Rouint interactive menu. Run 'rouint' to start.[/red]")
+        return
     if not is_initialized():
         console.print("[red]Error: Workspace not initialized. Run 'rouint init' first.[/red]")
         return
+    clear_screen()
+    display_header("Manage Saved API Endpoints")
 
     while True:
         manager = EndpointManager()
@@ -1307,26 +1459,41 @@ def list_api(show_wrapper):
         action = questionary.select("What would you like to do with this endpoint?", choices=[
             "Edit Endpoint",
             "View Configuration",
-            "Show Wrapper",
             "Delete Endpoint",
             "Back"
         ], style=_get_select_style(), pointer=_POINTER, instruction="").ask()
 
         if action == "Edit Endpoint":
             handle_endpoint_creation(existing_ep=selected_ep)
+            clear_screen()
             console.print("[green]✓ Endpoint updated successfully![/green]")
+            import time
+            time.sleep(1.5)
+            clear_screen()
         elif action == "View Configuration":
+            clear_screen()
             console.print("\n[bold]Configuration:[/bold]")
             console.print(json.dumps(selected_ep, indent=2))
+            import time
+            time.sleep(2.0)
+            clear_screen()
         elif action == "Show Wrapper":
+            clear_screen()
             _render_wrapper_panel(selected_ep)
             console.print()
+            import time
+            time.sleep(2.0)
+            clear_screen()
         elif action == "Delete Endpoint":
             confirm = questionary.confirm("Are you sure you want to delete this endpoint?").ask()
             if confirm:
                 slug = selected_ep['id'].replace("ep_", "")
                 manager.delete_endpoint(slug)
+                clear_screen()
                 console.print("[red]✓ Endpoint deleted.[/red]")
+                import time
+                time.sleep(1.5)
+                clear_screen()
         elif action == "Back":
             break
 
@@ -1338,16 +1505,25 @@ def clear_token():
     it is saved to .rouint-data/.temp_token for reuse on subsequent
     Bearer-auth requests. Use this command to remove it.
     """
-    clear_screen()
-    display_header("Clear Saved Temp Token")
+    if not is_in_launcher():
+        console.print("[red]Error: This command must be run from the Rouint interactive menu. Run 'rouint' to start.[/red]")
+        return
     if not is_initialized():
         console.print("[red]Error: Workspace not initialized. Run 'rouint init' first.[/red]")
         return
+    clear_screen()
+    display_header("Clear Saved Temp Token")
 
     if clear_temp_token():
         console.print("[green]✓ Temp token cleared successfully.[/green]")
+        import time
+        time.sleep(1.5)
+        clear_screen()
     else:
         console.print("[yellow]No temp token found to clear.[/yellow]")
+        import time
+        time.sleep(1.5)
+        clear_screen()
 
 
 @cli.command(name="set-theme")
@@ -1393,12 +1569,6 @@ def set_theme():
 
     # ── Banner control ────────────────────────────────────────────────────────
     # Called on every repaint — reads state["idx"] to pick the preview colour.
-    ASCII_LINES = [
-        "█▀▀█ █▀▀█ █  █ ▀█▀ █  █ ▀█▀",
-        "█▄▄▀ █  █ █  █  █  █▀▄█  █ ",
-        "█  █ █▄▄█ ▀▄▄▀ ▄█▄ █  █  █ ",
-    ]
-
     def get_banner_text():
         # Clamp to valid theme index — cancel row (idx == len(theme_keys)) shows
         # the last theme preview rather than crashing with an index error.
@@ -1414,17 +1584,40 @@ def set_theme():
 
         # ── Command title (replaces the static display_header above the app) ──
         tokens.append(("bold", "\n"))
-        for i, line in enumerate(ASCII_LINES):
-            c = ascii_colours[i] if i < len(ascii_colours) else colour
-            tokens.append((f"fg:{c} bold", line + "\n"))
-        tokens.append(("", "\n"))
-        tokens.append((f"fg:{colour} bold", f"  ◆  Set Colour Theme\n"))
-        tokens.append(("fg:#555555", f"  ──────────────────────────────\n"))
+
+        # Construct the ROUINT ASCII art and info grid in a way that mimics display_header
+        # Since we are in prompt_toolkit, we simulate the grid with padding
+
+        # Row 1
+        c0 = ascii_colours[0] if len(ascii_colours) > 0 else colour
+        tokens.append((f"fg:{c0} bold", "█▀▀█ █▀▀█ █  █ ▀█▀ █  █ ▀█▀"))
+        tokens.append((" ", "    "))
+        tokens.append(("bold white", "Rouint CLI"))
+        tokens.append((" ", " "))
+        tokens.append((f"fg:{colour}", f"v{__version__}"))
         tokens.append(("", "\n"))
 
-        # ── Live preview: theme name + description in accent colour ──────────
-        tokens.append((f"fg:{colour} bold", f"  {theme['display_name']}\n"))
-        tokens.append(("fg:#767676",         f"  {theme['description']}\n"))
+        # Row 2
+        c1 = ascii_colours[1] if len(ascii_colours) > 1 else colour
+        tokens.append((f"fg:{c1} bold", "█▄▄▀ █  █ █  █  █  █▀▄█  █ "))
+        tokens.append((" ", "    "))
+        tokens.append(("fg:#767676", "cURL-Powered API Management & Testing Tool"))
+        tokens.append(("", "\n"))
+
+        # Row 3
+        c2 = ascii_colours[2] if len(ascii_colours) > 2 else colour
+        tokens.append((f"fg:{c2} bold", "█  █ █▄▄█ ▀▄▄▀ ▄█▄ █  █  █ "))
+        tokens.append((" ", "    "))
+        tokens.append(("fg:#767676", "Workspace: "))
+
+        # Truncate CWD for the banner
+        import os
+        cwd = os.getcwd()
+        if len(cwd) > 42:
+            cwd = "..." + cwd[-39:]
+        tokens.append((f"fg:{colour}", cwd))
+        tokens.append(("", "\n"))
+
         tokens.append(("", "\n"))
 
         return tokens
@@ -1549,3 +1742,4 @@ def set_theme():
         f"  [dim]{theme['description']}[/dim]"
     )
     console.print("[dim]Saved to .rouint-data/theme — active across all sessions.[/dim]")
+    import time; time.sleep(1.2)  # brief pause so user reads confirmation before screen clears

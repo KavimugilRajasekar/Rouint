@@ -328,15 +328,7 @@ def get_menu_items(state: Optional[WorkspaceState] = None) -> list[MenuItem]:
             enabled=True,
         ))
 
-    # 8. help: Always visible and enabled — shows command reference inline.
-    items.append(MenuItem(
-        name="help",
-        description="Show command reference",
-        hint=None,
-        enabled=True,
-    ))
-
-    # 9. Exit: Always available to close the interactive menu cleanly.
+    # 8. Exit: Always available to close the interactive menu cleanly.
     items.append(MenuItem(
         name="— Exit —",
         description="",
@@ -528,7 +520,6 @@ def prompt_launcher_menu(
         return [
             ("class:qmark", "?"),
             ("class:question", " What would you like to do? "),
-            ("class:instruction", "(Use arrow keys)"),
         ]
 
     layout = common.create_inquirer_layout(ic, get_prompt_tokens, **kwargs)
@@ -666,7 +657,7 @@ def interactive_launcher(ctx: click.Context) -> None:
     set_in_launcher(True)
     try:
         clear_screen()
-        display_header("Command Launcher")
+        display_header(force_banner=True)
 
         _loop_guard = 0
         while True:
@@ -676,9 +667,8 @@ def interactive_launcher(ctx: click.Context) -> None:
 
             # Clear screen and re-print header before every menu render so the
             # launcher always appears at the top of the viewport — clean and focused.
-            if _loop_guard > 1:
-                clear_screen()
-                display_header("Command Launcher")
+            clear_screen()
+            display_header(force_banner=True)
 
             state = get_workspace_state()
             items = get_menu_items(state)
@@ -695,12 +685,6 @@ def interactive_launcher(ctx: click.Context) -> None:
             if not enabled_map.get(selected, False):
                 break
 
-            # ── help: show inline reference panel, then loop back ────────────
-            if selected == "help":
-                _show_help_inline(ctx)
-                console.print()
-                continue
-
             # ── start-test: offer --no-metrics mode selection ────────────────
             if selected == "start-test":
                 mode = questionary.select(
@@ -714,13 +698,10 @@ def interactive_launcher(ctx: click.Context) -> None:
                     instruction="",
                 ).ask()
                 if mode is None:
-                    # User cancelled mode selection (Esc) — return to launcher menu
-                    console.print()
                     continue
                 cmd = ctx.command.get_command(ctx, "start-test")
                 if cmd is not None:
                     ctx.invoke(cmd, no_metrics=mode)
-                console.print()
                 continue
 
             # ── list-api: offer --show-wrapper mode selection ─────────────────
@@ -736,12 +717,10 @@ def interactive_launcher(ctx: click.Context) -> None:
                     instruction="",
                 ).ask()
                 if mode is None:
-                    console.print()
                     continue
                 cmd = ctx.command.get_command(ctx, "list-api")
                 if cmd is not None:
                     ctx.invoke(cmd, show_wrapper=mode)
-                console.print()
                 continue
 
             # ── set-theme: invoke directly ────────────────────────────────────
@@ -749,16 +728,26 @@ def interactive_launcher(ctx: click.Context) -> None:
                 cmd = ctx.command.get_command(ctx, "set-theme")
                 if cmd is not None:
                     ctx.invoke(cmd)
-                # After theme change, reset banner so next loop iteration
-                # re-renders the header in the newly selected colour.
+                # Reset banner so it re-renders in the new theme colour next iteration
                 reset_banner_state()
-                console.print()
                 continue
 
             cmd = ctx.command.get_command(ctx, selected)
             if cmd is not None:
                 ctx.invoke(cmd)
-
-            console.print()
+            # No console.print() here — clear_screen() at loop top handles spacing
     finally:
         set_in_launcher(False)
+        # Clear the entire terminal screen and scrollback on exit to protect
+        # confidential endpoint/request data from remaining in the terminal view.
+        import os
+        if os.name == "nt":
+            os.system("cls")
+        else:
+            # \033[H (Home) + \033[2J (Clear screen) + \033[3J (Clear scrollback)
+            import sys
+            sys.stdout.write("\033[H\033[2J\033[3J")
+            sys.stdout.flush()
+
+        # Re-print the prompt line to make the terminal look natural again
+        print()

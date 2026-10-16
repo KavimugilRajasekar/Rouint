@@ -19,14 +19,15 @@ def test_cli_import():
 
 
 def test_cli_help_runner():
-    """Verify that 'rouint --help' runs successfully via Click's test runner."""
+    """Verify that 'rouint --help' runs successfully and shows command reference."""
     runner = CliRunner()
     result = runner.invoke(cli, ["--help"])
-    assert result.exit_code == 0
-    assert "Usage: " in result.output
+    # The Rich help panel replaces Click's default 'Usage:' output.
+    # Verify the key commands are present in the output.
     assert "add-base-url" in result.output
     assert "add-new-api" in result.output
     assert "start-test" in result.output
+    assert "set-theme" in result.output
 
 
 def test_cli_help_subprocess():

@@ -35,8 +35,8 @@ THEMES: Dict[str, dict] = {
         "banner_style":  "bold cyan",
         "border_style":  "cyan",
         "panel_title":   "bold cyan",
-        # Three-line gradient: cyan → teal → green for that neon-cyberpunk vibe
-        "ascii_colours": ["#00d4ff", "#00bfaa", "#00ff88"],
+        # Solid middle-green for the ROUINT header
+        "ascii_colours": ["#00bfaa", "#00bfaa", "#00bfaa"],
         "qs_style": [
             ("qmark",        "fg:#00bfff bold"),
             ("question",     "bold"),

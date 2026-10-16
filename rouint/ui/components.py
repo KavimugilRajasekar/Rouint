@@ -71,8 +71,8 @@ def clear_screen() -> None:
     if os.name == "nt":
         os.system("cls")
     else:
-        # ANSI: erase entire display + move cursor to row 1 col 1
-        sys.stdout.write("\033[2J\033[H")
+        # \033[H: Home, \033[2J: Clear Screen, \033[3J: Clear Scrollback
+        sys.stdout.write("\033[H\033[2J\033[3J")
         sys.stdout.flush()
 
 
